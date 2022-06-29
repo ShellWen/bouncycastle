@@ -13,8 +13,6 @@ import javax.crypto.spec.SecretKeySpec;
 import org.bouncycastle.asn1.cms.GCMParameters;
 import org.bouncycastle.jcajce.spec.AEADParameterSpec;
 import org.bouncycastle.jcajce.util.JcaJceHelper;
-import org.bouncycastle.tls.AlertDescription;
-import org.bouncycastle.tls.TlsFatalAlert;
 import org.bouncycastle.tls.crypto.impl.TlsAEADCipherImpl;
 
 /**
@@ -23,8 +21,6 @@ import org.bouncycastle.tls.crypto.impl.TlsAEADCipherImpl;
 public class JceAEADCipherImpl
     implements TlsAEADCipherImpl
 {
-    private static final int BUF_SIZE = 32 * 1024;
-
     @SuppressWarnings({ "rawtypes", "unchecked" })
     private static boolean checkForAEAD()
     {
@@ -102,7 +98,7 @@ public class JceAEADCipherImpl
                 // fortunately CCM and GCM parameters have the same ASN.1 structure
                 algParams.init(new GCMParameters(nonce, macSize).getEncoded());
 
-                cipher.init(cipherMode, key, algParams);
+                cipher.init(cipherMode, key, algParams, null);
 
                 if (additionalData != null && additionalData.length > 0)
                 {
@@ -112,7 +108,7 @@ public class JceAEADCipherImpl
             else
             {
                 // Otherwise fall back to the BC-specific AEADParameterSpec
-                cipher.init(cipherMode, key, new AEADParameterSpec(nonce, macSize * 8, additionalData));
+                cipher.init(cipherMode, key, new AEADParameterSpec(nonce, macSize * 8, additionalData), null);
             }
         }
         catch (Exception e)
@@ -126,45 +122,21 @@ public class JceAEADCipherImpl
         return cipher.getOutputSize(inputLength);
     }
 
-    public int doFinal(byte[] input, int inputOffset, int inputLength, byte[] extraInput, byte[] output,
-        int outputOffset) throws IOException
+    public int doFinal(byte[] input, int inputOffset, int inputLength, byte[] output, int outputOffset)
+        throws IOException
     {
-        int extraInputLength = extraInput.length;
-        if (extraInputLength > 0 && Cipher.ENCRYPT_MODE != cipherMode)
-        {
-            throw new TlsFatalAlert(AlertDescription.internal_error);
-        }
-
+        /*
+         * NOTE: Some providers don't allow cipher update methods with AEAD decryption,
+         * since they may return partial data that has not yet been authenticated. So we
+         * make sure to use a single call for the whole record.
+         */
         try
         {
-            int len = updateCipher(input, inputOffset, inputLength, output, outputOffset);
-
-            if (extraInputLength > 0)
-            {
-                len += updateCipher(extraInput, 0, extraInputLength, output, outputOffset + len);
-            }
-
-            len += cipher.doFinal(output, outputOffset + len);
-
-            return len;
+            return cipher.doFinal(input, inputOffset, inputLength, output, outputOffset);
         }
         catch (GeneralSecurityException e)
         {
             throw Exceptions.illegalStateException("", e);
         }
-    }
-
-    protected int updateCipher(byte[] input, int inOff, int inLen, byte[] output, int outOff)
-        throws GeneralSecurityException
-    {
-        // to avoid performance issue in FIPS jar 1.0.0-1.0.2, process in chunks
-        int readOff = 0, writeOff = 0;
-        while (readOff < inLen)
-        {
-            int updateSize = Math.min(BUF_SIZE, inLen - readOff);
-            writeOff += cipher.update(input, inOff + readOff, updateSize, output, outOff + writeOff);
-            readOff += updateSize;
-        }
-        return writeOff;
     }
 }

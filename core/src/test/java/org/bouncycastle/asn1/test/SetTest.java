@@ -2,7 +2,9 @@ package org.bouncycastle.asn1.test;
 
 import org.bouncycastle.asn1.ASN1Boolean;
 import org.bouncycastle.asn1.ASN1EncodableVector;
+import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.ASN1TaggedObject;
 import org.bouncycastle.asn1.BERSet;
@@ -39,6 +41,7 @@ public class SetTest
     }
 
     public void performTest()
+        throws Exception
     {
         ASN1EncodableVector v = new ASN1EncodableVector();
         byte[] data = new byte[10];
@@ -90,6 +93,10 @@ public class SetTest
 
         // create an implicitly tagged "set" without sorting
         ASN1TaggedObject tag = new DERTaggedObject(false, 1, new DERSequence(v));
+
+        // Encode/decode to get 'tag' as a parsed instance
+        tag = (ASN1TaggedObject)ASN1Primitive.fromByteArray(tag.getEncoded(ASN1Encoding.DER));
+
         s = ASN1Set.getInstance(tag, false);
 
         if (s.getObjectAt(0) instanceof ASN1Boolean)

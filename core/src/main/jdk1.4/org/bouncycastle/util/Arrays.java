@@ -273,14 +273,6 @@ public final class Arrays
         java.util.Arrays.fill(a, val);
     }
 
-    /**
-     * @deprecated Use {@link #fill(byte[], int, int, byte)} instead.
-     */
-    public static void fill(byte[] a, int fromIndex, byte val)
-    {
-        fill(a, fromIndex, a.length, val);
-    }
-
     public static void fill(byte[] a, int fromIndex, int toIndex, byte val)
     {
         java.util.Arrays.fill(a, fromIndex, toIndex, val);
@@ -301,14 +293,6 @@ public final class Arrays
         java.util.Arrays.fill(a, val);
     }
 
-    /**
-     * @deprecated Use {@link #fill(int[], int, int, int)} instead.
-     */
-    public static void fill(int[] a, int fromIndex, int val)
-    {
-        java.util.Arrays.fill(a, fromIndex, a.length, val);
-    }
-
     public static void fill(int[] a, int fromIndex, int toIndex, int val)
     {
         java.util.Arrays.fill(a, fromIndex, toIndex, val);
@@ -317,14 +301,6 @@ public final class Arrays
     public static void fill(long[] a, long val)
     {
         java.util.Arrays.fill(a, val);
-    }
-
-    /**
-     * @deprecated Use {@link #fill(long[], int, int, long)} instead.
-     */
-    public static void fill(long[] a, int fromIndex, long val)
-    {
-        java.util.Arrays.fill(a, fromIndex, a.length, val);
     }
 
     public static void fill(long[] a, int fromIndex, int toIndex, long val)
@@ -345,14 +321,6 @@ public final class Arrays
     public static void fill(short[] a, short val)
     {
         java.util.Arrays.fill(a, val);
-    }
-
-    /**
-     * @deprecated Use {@link #fill(short[], int, int, short)} instead.
-     */
-    public static void fill(short[] a, int fromIndex, short val)
-    {
-        java.util.Arrays.fill(a, fromIndex, a.length, val);
     }
 
     public static void fill(short[] a, int fromIndex, int toIndex, short val)
@@ -859,6 +827,25 @@ public final class Arrays
         return r;
     }
 
+    public static short[] concatenate(short[] a, short[] b)
+    {
+        if (null == a)
+        {
+            // b might also be null
+            return clone(b);
+        }
+        if (null == b)
+        {
+            // a might also be null
+            return clone(a);
+        }
+
+        short[] r = new short[a.length + b.length];
+        System.arraycopy(a, 0, r, 0, a.length);
+        System.arraycopy(b, 0, r, a.length, b.length);
+        return r;
+    }
+    
     public static byte[] concatenate(byte[] a, byte[] b, byte[] c)
     {
         if (null == a)
@@ -1007,6 +994,60 @@ public final class Arrays
         return result;
     }
 
+    public static int[] reverse(int[] a)
+    {
+        if (a == null)
+        {
+            return null;
+        }
+
+        int p1 = 0, p2 = a.length;
+        int[] result = new int[p2];
+
+        while (--p2 >= 0)
+        {
+            result[p2] = a[p1++];
+        }
+
+        return result;
+    }
+
+    public static byte[] reverseInPlace(byte[] a)
+    {
+        if (null == a)
+        {
+            return null;
+        }
+
+        int p1 = 0, p2 = a.length - 1;
+        while (p1 < p2)
+        {
+            byte t1 = a[p1], t2 = a[p2];
+            a[p1++] = t2;
+            a[p2--] = t1;
+        }
+
+        return a;
+    }
+
+    public static int[] reverseInPlace(int[] a)
+    {
+        if (null == a)
+        {
+            return null;
+        }
+
+        int p1 = 0, p2 = a.length - 1;
+        while (p1 < p2)
+        {
+            int t1 = a[p1], t2 = a[p2];
+            a[p1++] = t2;
+            a[p2--] = t1;
+        }
+
+        return a;
+    }
+
     /**
      * Fill input array by zeros
      *
@@ -1045,6 +1086,21 @@ public final class Arrays
         return false;
     }
 
+    public static boolean isNullOrEmpty(byte[] array)
+    {
+        return null == array || array.length < 1;
+    }
+
+    public static boolean isNullOrEmpty(int[] array)
+    {
+        return null == array || array.length < 1;
+    }
+
+    public static boolean isNullOrEmpty(Object[] array)
+    {
+        return null == array || array.length < 1;
+    }
+        
     /**
      * Iterator backed by a specific array.
      */

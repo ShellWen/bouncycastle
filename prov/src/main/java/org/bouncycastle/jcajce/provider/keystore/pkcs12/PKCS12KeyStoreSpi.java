@@ -2,6 +2,7 @@ package org.bouncycastle.jcajce.provider.keystore.pkcs12;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -46,6 +47,7 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.PBEParameterSpec;
 
+import org.bouncycastle.asn1.ASN1BMPString;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Encoding;
@@ -89,8 +91,11 @@ import org.bouncycastle.asn1.x509.X509ObjectIdentifiers;
 import org.bouncycastle.crypto.CryptoServicesRegistrar;
 import org.bouncycastle.crypto.Digest;
 import org.bouncycastle.crypto.util.DigestFactory;
+import org.bouncycastle.jcajce.BCLoadStoreParameter;
 import org.bouncycastle.jcajce.PKCS12Key;
 import org.bouncycastle.jcajce.PKCS12StoreParameter;
+import org.bouncycastle.jcajce.provider.keystore.util.AdaptingKeyStoreSpi;
+import org.bouncycastle.jcajce.provider.keystore.util.ParameterUtil;
 import org.bouncycastle.jcajce.spec.GOST28147ParameterSpec;
 import org.bouncycastle.jcajce.spec.PBKDF2KeySpec;
 import org.bouncycastle.jcajce.util.BCJcaJceHelper;
@@ -120,7 +125,7 @@ public class PKCS12KeyStoreSpi
     private static final DefaultSecretKeyProvider keySizeProvider = new DefaultSecretKeyProvider();
 
     private IgnoresCaseHashtable keys = new IgnoresCaseHashtable();
-    private Hashtable localIds = new Hashtable();
+    private IgnoresCaseHashtable localIds = new IgnoresCaseHashtable();
     private IgnoresCaseHashtable certs = new IgnoresCaseHashtable();
     private Hashtable chainCerts = new Hashtable();
     private Hashtable keyCerts = new Hashtable();
@@ -228,7 +233,7 @@ public class PKCS12KeyStoreSpi
     private static byte[] getDigest(SubjectPublicKeyInfo spki)
     {
         Digest digest = DigestFactory.createSHA1();
-        byte[]  resBuf = new byte[digest.getDigestSize()];
+        byte[] resBuf = new byte[digest.getDigestSize()];
 
         byte[] bytes = spki.getPublicKeyData().getBytes();
         digest.update(bytes, 0, bytes.length);
@@ -240,6 +245,12 @@ public class PKCS12KeyStoreSpi
         SecureRandom rand)
     {
         this.random = rand;
+    }
+
+    public boolean engineProbe(InputStream stream)
+        throws IOException
+    {
+        return false;
     }
 
     public Enumeration engineAliases()
@@ -643,7 +654,7 @@ public class PKCS12KeyStoreSpi
 
         try
         {
-            SecretKeyFactory keyFact =  helper.createSecretKeyFactory(algorithm);
+            SecretKeyFactory keyFact = helper.createSecretKeyFactory(algorithm);
             PBEParameterSpec defParams = new PBEParameterSpec(
                 pbeParams.getIV(),
                 pbeParams.getIterations().intValue());
@@ -693,7 +704,7 @@ public class PKCS12KeyStoreSpi
                 throw new IOException("exception decrypting data - " + e.toString());
             }
         }
-        else  if (algorithm.equals(PKCSObjectIdentifiers.id_PBES2))
+        else if (algorithm.equals(PKCSObjectIdentifiers.id_PBES2))
         {
             try
             {
@@ -731,7 +742,7 @@ public class PKCS12KeyStoreSpi
             key = keyFact.generateSecret(new PBKDF2KeySpec(password, func.getSalt(), validateIterationCount(func.getIterationCount()), keySizeProvider.getKeySize(encScheme), func.getPrf()));
         }
 
-        Cipher cipher = Cipher.getInstance(alg.getEncryptionScheme().getAlgorithm().getId());
+        Cipher cipher = helper.createCipher(alg.getEncryptionScheme().getAlgorithm().getId());
 
         ASN1Encodable encParams = alg.getEncryptionScheme().getParameters();
         if (encParams instanceof ASN1OctetString)
@@ -746,6 +757,26 @@ public class PKCS12KeyStoreSpi
             cipher.init(mode, key, new GOST28147ParameterSpec(gParams.getEncryptionParamSet(), gParams.getIV()));
         }
         return cipher;
+    }
+
+    public void engineLoad(KeyStore.LoadStoreParameter loadStoreParameter)
+        throws IOException, NoSuchAlgorithmException, CertificateException
+    {
+        if (loadStoreParameter == null)
+        {
+            engineLoad(null, null);
+        }
+        else if (loadStoreParameter instanceof BCLoadStoreParameter)
+        {
+            BCLoadStoreParameter bcParam = (BCLoadStoreParameter)loadStoreParameter;
+
+            engineLoad(bcParam.getInputStream(), ParameterUtil.extractPassword(loadStoreParameter));
+        }
+        else
+        {
+            throw new IllegalArgumentException(
+                "no support for 'param' of type " + loadStoreParameter.getClass().getName());
+        }
     }
 
     public void engineLoad(
@@ -763,7 +794,10 @@ public class PKCS12KeyStoreSpi
         bufIn.mark(10);
 
         int head = bufIn.read();
-
+        if (head < 0)
+        {
+            throw new EOFException("no data in keystore stream");
+        }
         if (head != 0x30)
         {
             throw new IOException("stream does not represent a PKCS12 key store");
@@ -772,7 +806,7 @@ public class PKCS12KeyStoreSpi
         bufIn.reset();
 
         ASN1InputStream bIn = new ASN1InputStream(bufIn);
-        
+
         Pfx bag;
         try
         {
@@ -836,7 +870,7 @@ public class PKCS12KeyStoreSpi
                 throw new IOException("error constructing MAC: " + e.toString());
             }
         }
-        else if (password != null)
+        else if (password != null && password.length != 0)
         {
             if (!Properties.isOverrideSet("org.bouncycastle.pkcs12.ignore_useless_passwd"))
             {
@@ -845,7 +879,7 @@ public class PKCS12KeyStoreSpi
         }
 
         keys = new IgnoresCaseHashtable();
-        localIds = new Hashtable();
+        localIds = new IgnoresCaseHashtable();
 
         if (info.getContentType().equals(data))
         {
@@ -910,7 +944,7 @@ public class PKCS12KeyStoreSpi
 
                                     if (aOid.equals(pkcs_9_at_friendlyName))
                                     {
-                                        alias = ((DERBMPString)attr).getString();
+                                        alias = ((ASN1BMPString)attr).getString();
                                         keys.put(alias, privKey);
                                     }
                                     else if (aOid.equals(pkcs_9_at_localKeyId))
@@ -945,6 +979,7 @@ public class PKCS12KeyStoreSpi
                         }
                         else
                         {
+                            // -DM 2 System.out.println
                             System.out.println("extra in data " + b.getBagId());
                             System.out.println(ASN1Dump.dumpAsString(b));
                         }
@@ -1007,7 +1042,7 @@ public class PKCS12KeyStoreSpi
 
                                 if (aOid.equals(pkcs_9_at_friendlyName))
                                 {
-                                    alias = ((DERBMPString)attr).getString();
+                                    alias = ((ASN1BMPString)attr).getString();
                                     keys.put(alias, privKey);
                                 }
                                 else if (aOid.equals(pkcs_9_at_localKeyId))
@@ -1068,7 +1103,7 @@ public class PKCS12KeyStoreSpi
 
                                     if (aOid.equals(pkcs_9_at_friendlyName))
                                     {
-                                        alias = ((DERBMPString)attr).getString();
+                                        alias = ((ASN1BMPString)attr).getString();
                                         keys.put(alias, privKey);
                                     }
                                     else if (aOid.equals(pkcs_9_at_localKeyId))
@@ -1091,6 +1126,7 @@ public class PKCS12KeyStoreSpi
                         }
                         else
                         {
+                            // -DM 2 System.out.println
                             System.out.println("extra in encryptedData " + b.getBagId());
                             System.out.println(ASN1Dump.dumpAsString(b));
                         }
@@ -1098,6 +1134,7 @@ public class PKCS12KeyStoreSpi
                 }
                 else
                 {
+                    // -DM 2 System.out.println
                     System.out.println("extra " + c[i].getContentType().getId());
                     System.out.println("extra " + ASN1Dump.dumpAsString(c[i].getContent()));
                 }
@@ -1158,6 +1195,17 @@ public class PKCS12KeyStoreSpi
                             ASN1Encodable existing = bagAttr.getBagAttribute(oid);
                             if (existing != null)
                             {
+                                // we've found more than one - one might be incorrect
+                                if (oid.equals(pkcs_9_at_localKeyId))
+                                {
+                                    // -DM Hex.toHexString
+                                    String id = Hex.toHexString(((ASN1OctetString)attr).getOctets());
+                                    if (!(keys.keys.containsKey(id) || localIds.keys.containsKey(id)))
+                                    {
+                                        continue; // ignore this one - it's not valid
+                                    }
+                                }
+
                                 // OK, but the value has to be the same
                                 if (!existing.toASN1Primitive().equals(attr))
                                 {
@@ -1173,7 +1221,7 @@ public class PKCS12KeyStoreSpi
 
                         if (oid.equals(pkcs_9_at_friendlyName))
                         {
-                            alias = ((DERBMPString)attr).getString();
+                            alias = ((ASN1BMPString)attr).getString();
                         }
                         else if (oid.equals(pkcs_9_at_localKeyId))
                         {
@@ -1371,7 +1419,7 @@ public class PKCS12KeyStoreSpi
                 //
                 // make sure we are using the local alias on store
                 //
-                DERBMPString nm = (DERBMPString)bagAttrs.getBagAttribute(pkcs_9_at_friendlyName);
+                ASN1BMPString nm = (ASN1BMPString)bagAttrs.getBagAttribute(pkcs_9_at_friendlyName);
                 if (nm == null || !nm.getString().equals(name))
                 {
                     bagAttrs.setBagAttribute(pkcs_9_at_friendlyName, new DERBMPString(name));
@@ -1462,7 +1510,7 @@ public class PKCS12KeyStoreSpi
                     //
                     // make sure we are using the local alias on store
                     //
-                    DERBMPString nm = (DERBMPString)bagAttrs.getBagAttribute(pkcs_9_at_friendlyName);
+                    ASN1BMPString nm = (ASN1BMPString)bagAttrs.getBagAttribute(pkcs_9_at_friendlyName);
                     if (nm == null || !nm.getString().equals(name))
                     {
                         bagAttrs.setBagAttribute(pkcs_9_at_friendlyName, new DERBMPString(name));
@@ -1668,7 +1716,7 @@ public class PKCS12KeyStoreSpi
             //
             // make sure we are using the local alias on store
             //
-            DERBMPString nm = (DERBMPString)bagAttrs.getBagAttribute(pkcs_9_at_friendlyName);
+            ASN1BMPString nm = (ASN1BMPString)bagAttrs.getBagAttribute(pkcs_9_at_friendlyName);
             if (nm == null || !nm.getString().equals(certId))
             {
                 if (certId != null)
@@ -1719,19 +1767,19 @@ public class PKCS12KeyStoreSpi
     {
         Set usedSet = new HashSet();
 
-        for (Enumeration en = keys.keys(); en.hasMoreElements();)
+        for (Enumeration en = keys.keys(); en.hasMoreElements(); )
         {
             String alias = (String)en.nextElement();
 
-                Certificate[] certs = engineGetCertificateChain(alias);
+            Certificate[] certs = engineGetCertificateChain(alias);
 
-                for (int i = 0; i != certs.length; i++)
-                {
-                    usedSet.add(certs[i]);
-                }
+            for (int i = 0; i != certs.length; i++)
+            {
+                usedSet.add(certs[i]);
+            }
         }
 
-        for (Enumeration en = certs.keys(); en.hasMoreElements();)
+        for (Enumeration en = certs.keys(); en.hasMoreElements(); )
         {
             String alias = (String)en.nextElement();
 
@@ -1762,38 +1810,38 @@ public class PKCS12KeyStoreSpi
     }
 
     public static class BCPKCS12KeyStore
-        extends PKCS12KeyStoreSpi
+        extends AdaptingKeyStoreSpi
     {
         public BCPKCS12KeyStore()
         {
-            super(new BCJcaJceHelper(), pbeWithSHAAnd3_KeyTripleDES_CBC, pbeWithSHAAnd40BitRC2_CBC);
+            super(new BCJcaJceHelper(), new PKCS12KeyStoreSpi(new BCJcaJceHelper(), pbeWithSHAAnd3_KeyTripleDES_CBC, pbeWithSHAAnd40BitRC2_CBC));
         }
     }
 
     public static class BCPKCS12KeyStore3DES
-        extends PKCS12KeyStoreSpi
+        extends AdaptingKeyStoreSpi
     {
         public BCPKCS12KeyStore3DES()
         {
-            super(new BCJcaJceHelper(), pbeWithSHAAnd3_KeyTripleDES_CBC, pbeWithSHAAnd3_KeyTripleDES_CBC);
+            super(new BCJcaJceHelper(), new PKCS12KeyStoreSpi(new BCJcaJceHelper(), pbeWithSHAAnd3_KeyTripleDES_CBC, pbeWithSHAAnd3_KeyTripleDES_CBC));
         }
     }
 
     public static class DefPKCS12KeyStore
-        extends PKCS12KeyStoreSpi
+        extends AdaptingKeyStoreSpi
     {
         public DefPKCS12KeyStore()
         {
-            super(new DefaultJcaJceHelper(), pbeWithSHAAnd3_KeyTripleDES_CBC, pbeWithSHAAnd40BitRC2_CBC);
+            super(new DefaultJcaJceHelper(), new PKCS12KeyStoreSpi(new DefaultJcaJceHelper(), pbeWithSHAAnd3_KeyTripleDES_CBC, pbeWithSHAAnd40BitRC2_CBC));
         }
     }
 
     public static class DefPKCS12KeyStore3DES
-        extends PKCS12KeyStoreSpi
+        extends AdaptingKeyStoreSpi
     {
         public DefPKCS12KeyStore3DES()
         {
-            super(new DefaultJcaJceHelper(), pbeWithSHAAnd3_KeyTripleDES_CBC, pbeWithSHAAnd3_KeyTripleDES_CBC);
+            super(new DefaultJcaJceHelper(), new PKCS12KeyStoreSpi(new DefaultJcaJceHelper(), pbeWithSHAAnd3_KeyTripleDES_CBC, pbeWithSHAAnd3_KeyTripleDES_CBC));
         }
     }
 

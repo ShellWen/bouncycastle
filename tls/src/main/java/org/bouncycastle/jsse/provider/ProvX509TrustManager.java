@@ -7,6 +7,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.Provider;
 import java.security.cert.CertPath;
 import java.security.cert.CertPathBuilder;
+import java.security.cert.CertPathBuilderException;
 import java.security.cert.CertSelector;
 import java.security.cert.CertStore;
 import java.security.cert.CertStoreParameters;
@@ -41,6 +42,7 @@ import org.bouncycastle.jsse.BCSSLParameters;
 import org.bouncycastle.jsse.BCX509ExtendedTrustManager;
 import org.bouncycastle.jsse.java.security.BCAlgorithmConstraints;
 import org.bouncycastle.tls.KeyExchangeAlgorithm;
+import org.bouncycastle.tls.TlsUtils;
 
 class ProvX509TrustManager
     extends BCX509ExtendedTrustManager
@@ -128,7 +130,8 @@ class ProvX509TrustManager
         }
         else
         {
-            this.pkixParametersTemplate = new PKIXBuilderParameters(baseParameters.getTrustAnchors(), null);
+            this.pkixParametersTemplate = new PKIXBuilderParameters(baseParameters.getTrustAnchors(),
+                baseParameters.getTargetCertConstraints());
             this.pkixParametersTemplate.setAnyPolicyInhibited(baseParameters.isAnyPolicyInhibited());
             this.pkixParametersTemplate.setCertPathCheckers(baseParameters.getCertPathCheckers());
             this.pkixParametersTemplate.setCertStores(baseParameters.getCertStores());
@@ -253,11 +256,11 @@ class ProvX509TrustManager
     private void checkTrusted(X509Certificate[] chain, String authType, TransportData transportData,
         boolean checkServerTrusted) throws CertificateException
     {
-        if (null == chain || chain.length < 1)
+        if (TlsUtils.isNullOrEmpty(chain))
         {
             throw new IllegalArgumentException("'chain' must be a chain of at least one certificate");
         }
-        if (null == authType || authType.length() < 1)
+        if (TlsUtils.isNullOrEmpty(authType))
         {
             throw new IllegalArgumentException("'authType' must be a non-null, non-empty string");
         }
@@ -269,7 +272,7 @@ class ProvX509TrustManager
 
         X509Certificate[] trustedChain = validateChain(chain, authType, transportData, checkServerTrusted);
 
-        checkExtendedTrust(trustedChain, authType, transportData, checkServerTrusted);
+        checkExtendedTrust(trustedChain, transportData, checkServerTrusted);
     }
 
     // NOTE: We avoid re-reading eeCert from chain[0]
@@ -306,6 +309,14 @@ class ProvX509TrustManager
 
             return trustedChain;
         }
+        catch (CertificateException e)
+        {
+            throw e;
+        }
+        catch (CertPathBuilderException e)
+        {
+            throw new CertificateException(e.getMessage(), e.getCause());
+        }
         catch (GeneralSecurityException e)
         {
             throw new CertificateException("Unable to construct a valid chain", e);
@@ -332,15 +343,15 @@ class ProvX509TrustManager
         }
     }
 
-    static void checkExtendedTrust(X509Certificate[] trustedChain, String authType, TransportData transportData,
+    static void checkExtendedTrust(X509Certificate[] trustedChain, TransportData transportData,
         boolean checkServerTrusted) throws CertificateException
     {
         if (null != transportData)
         {
             BCSSLParameters parameters = transportData.getParameters();
 
-            String endpointIDAlg = parameters.getEndpointIdentificationAlgorithm();
-            if (null != endpointIDAlg && endpointIDAlg.length() > 0)
+            String endpointIDAlgorithm = parameters.getEndpointIdentificationAlgorithm();
+            if (JsseUtils.isNameSpecified(endpointIDAlgorithm))
             {
                 BCExtendedSSLSession handshakeSession = transportData.getHandshakeSession();
                 if (null == handshakeSession)
@@ -348,7 +359,7 @@ class ProvX509TrustManager
                     throw new CertificateException("No handshake session");
                 }
 
-                checkEndpointID(trustedChain[0], endpointIDAlg, checkServerTrusted, handshakeSession);
+                checkEndpointID(trustedChain[0], endpointIDAlgorithm, checkServerTrusted, handshakeSession);
             }
         }
     }

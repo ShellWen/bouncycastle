@@ -15,6 +15,8 @@ abstract class SSLParametersUtil
 {
     private static final Method getAlgorithmConstraints;
     private static final Method setAlgorithmConstraints;
+    private static final Method getApplicationProtocols;
+    private static final Method setApplicationProtocols;
     private static final Method getEndpointIdentificationAlgorithm;
     private static final Method setEndpointIdentificationAlgorithm;
     private static final Method getServerNames;
@@ -23,6 +25,8 @@ abstract class SSLParametersUtil
     private static final Method setSNIMatchers;
     private static final Method getUseCipherSuitesOrder;
     private static final Method setUseCipherSuitesOrder;
+    private static final Method getMaximumPacketSize;
+    private static final Method setMaximumPacketSize;
 
     static
     {
@@ -30,6 +34,8 @@ abstract class SSLParametersUtil
 
         getAlgorithmConstraints = ReflectionUtil.findMethod(methods, "getAlgorithmConstraints");
         setAlgorithmConstraints = ReflectionUtil.findMethod(methods, "setAlgorithmConstraints");
+        getApplicationProtocols = ReflectionUtil.findMethod(methods, "getApplicationProtocols");
+        setApplicationProtocols = ReflectionUtil.findMethod(methods, "setApplicationProtocols");
         getEndpointIdentificationAlgorithm = ReflectionUtil.findMethod(methods, "getEndpointIdentificationAlgorithm");
         setEndpointIdentificationAlgorithm = ReflectionUtil.findMethod(methods, "setEndpointIdentificationAlgorithm");
         getServerNames = ReflectionUtil.findMethod(methods, "getServerNames");
@@ -38,6 +44,8 @@ abstract class SSLParametersUtil
         setSNIMatchers = ReflectionUtil.findMethod(methods, "setSNIMatchers");
         getUseCipherSuitesOrder = ReflectionUtil.findMethod(methods, "getUseCipherSuitesOrder");
         setUseCipherSuitesOrder = ReflectionUtil.findMethod(methods, "setUseCipherSuitesOrder");
+        getMaximumPacketSize = ReflectionUtil.findMethod(methods, "getMaximumPacketSize");
+        setMaximumPacketSize = ReflectionUtil.findMethod(methods, "setMaximumPacketSize");
     }
 
     static BCSSLParameters getParameters(ProvSSLParameters prov)
@@ -49,13 +57,9 @@ abstract class SSLParametersUtil
         {
             ssl.setNeedClientAuth(true);
         }
-        else if (prov.getWantClientAuth())
-        {
-            ssl.setWantClientAuth(true);
-        }
         else
         {
-            ssl.setWantClientAuth(false);
+            ssl.setWantClientAuth(prov.getWantClientAuth());
         }
 
         ssl.setAlgorithmConstraints(prov.getAlgorithmConstraints());
@@ -64,6 +68,7 @@ abstract class SSLParametersUtil
         ssl.setServerNames(prov.getServerNames());
         ssl.setSNIMatchers(prov.getSNIMatchers());
         ssl.setApplicationProtocols(prov.getApplicationProtocols());
+        ssl.setMaximumPacketSize(prov.getMaximumPacketSize());
 
         return ssl;
     }
@@ -77,13 +82,9 @@ abstract class SSLParametersUtil
         {
             ssl.setNeedClientAuth(true);
         }
-        else if (prov.getWantClientAuth())
-        {
-            ssl.setWantClientAuth(true);
-        }
         else
         {
-            ssl.setWantClientAuth(false);
+            ssl.setWantClientAuth(prov.getWantClientAuth());
         }
 
         // From JDK 1.7
@@ -124,6 +125,24 @@ abstract class SSLParametersUtil
             }
         }
 
+        // From JDK 9 originally, then added to 8u251
+
+        if (null != setApplicationProtocols)
+        {
+            String[] applicationProtocols = prov.getApplicationProtocols();
+            if (null != applicationProtocols)
+            {
+                set(ssl, setApplicationProtocols, applicationProtocols);
+            }
+        }
+
+        // From JDK 9
+
+        if (null != setMaximumPacketSize)
+        {
+            set(ssl, setMaximumPacketSize, prov.getMaximumPacketSize());
+        }
+
         return ssl;
     }
 
@@ -136,13 +155,9 @@ abstract class SSLParametersUtil
         {
             bc.setNeedClientAuth(true);
         }
-        else if (ssl.getWantClientAuth())
-        {
-            bc.setWantClientAuth(true);
-        }
         else
         {
-            bc.setWantClientAuth(false);
+            bc.setWantClientAuth(ssl.getWantClientAuth());
         }
 
         // From JDK 1.7
@@ -190,6 +205,24 @@ abstract class SSLParametersUtil
             }
         }
 
+        // From JDK 9 originally, then added to 8u251
+
+        if (null != getApplicationProtocols)
+        {
+            String[] applicationProtocols = (String[])get(ssl, getApplicationProtocols);
+            if (null != applicationProtocols)
+            {
+                bc.setApplicationProtocols(applicationProtocols);
+            }
+        }
+
+        // From JDK 1.9
+
+        if (null != getMaximumPacketSize)
+        {
+            bc.setMaximumPacketSize((Integer)get(ssl, getMaximumPacketSize));
+        }
+
         return bc;
     }
 
@@ -212,13 +245,9 @@ abstract class SSLParametersUtil
         {
             prov.setNeedClientAuth(true);
         }
-        else if (ssl.getWantClientAuth())
-        {
-            prov.setWantClientAuth(true);
-        }
         else
         {
-            prov.setWantClientAuth(false);
+            prov.setWantClientAuth(ssl.getWantClientAuth());
         }
 
         BCAlgorithmConstraints algorithmConstraints = ssl.getAlgorithmConstraints();
@@ -252,6 +281,8 @@ abstract class SSLParametersUtil
         {
             prov.setApplicationProtocols(applicationProtocols);
         }
+
+        prov.setMaximumPacketSize(ssl.getMaximumPacketSize());
     }
 
     static void setSSLParameters(ProvSSLParameters prov, SSLParameters ssl)
@@ -273,13 +304,9 @@ abstract class SSLParametersUtil
         {
             prov.setNeedClientAuth(true);
         }
-        else if (ssl.getWantClientAuth())
-        {
-            prov.setWantClientAuth(true);
-        }
         else
         {
-            prov.setWantClientAuth(false);
+            prov.setWantClientAuth(ssl.getWantClientAuth());
         }
 
         // From JDK 1.7
@@ -325,6 +352,24 @@ abstract class SSLParametersUtil
             {
                 prov.setSNIMatchers(JsseUtils_8.importSNIMatchersDynamic(matchers));
             }
+        }
+
+        // From JDK 9 originally, then added to 8u251
+
+        if (null != getApplicationProtocols)
+        {
+            String[] applicationProtocols = (String[])get(ssl, getApplicationProtocols);
+            if (null != applicationProtocols)
+            {
+                prov.setApplicationProtocols(applicationProtocols);
+            }
+        }
+
+        // From JDK 9
+
+        if (null != getMaximumPacketSize)
+        {
+            prov.setMaximumPacketSize((Integer)get(ssl, getMaximumPacketSize));
         }
     }
 

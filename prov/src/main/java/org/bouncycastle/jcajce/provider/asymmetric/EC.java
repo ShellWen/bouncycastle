@@ -3,12 +3,13 @@ package org.bouncycastle.jcajce.provider.asymmetric;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.bouncycastle.asn1.bsi.BSIObjectIdentifiers;
-import org.bouncycastle.asn1.eac.EACObjectIdentifiers;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.sec.SECObjectIdentifiers;
 import org.bouncycastle.asn1.teletrust.TeleTrusTObjectIdentifiers;
 import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
+import org.bouncycastle.internal.asn1.bsi.BSIObjectIdentifiers;
+import org.bouncycastle.internal.asn1.cms.CMSObjectIdentifiers;
+import org.bouncycastle.internal.asn1.eac.EACObjectIdentifiers;
 import org.bouncycastle.jcajce.provider.asymmetric.ec.KeyFactorySpi;
 import org.bouncycastle.jcajce.provider.config.ConfigurableProvider;
 import org.bouncycastle.jcajce.provider.util.AsymmetricAlgorithmProvider;
@@ -197,11 +198,38 @@ public class EC
             provider.addAlgorithm("KeyPairGenerator.ECIES", PREFIX + "KeyPairGeneratorSpi$ECDH");
 
             provider.addAlgorithm("Cipher.ECIES", PREFIX + "IESCipher$ECIES");
+            provider.addAlgorithm("Cipher.ECIESwithSHA1", PREFIX + "IESCipher$ECIES");
+            provider.addAlgorithm("Cipher.ECIESWITHSHA1", PREFIX + "IESCipher$ECIES");
+            provider.addAlgorithm("Cipher.ECIESwithSHA256", PREFIX + "IESCipher$ECIESwithSHA256");
+            provider.addAlgorithm("Cipher.ECIESWITHSHA256", PREFIX + "IESCipher$ECIESwithSHA256");
+            provider.addAlgorithm("Cipher.ECIESwithSHA384", PREFIX + "IESCipher$ECIESwithSHA384");
+            provider.addAlgorithm("Cipher.ECIESWITHSHA384", PREFIX + "IESCipher$ECIESwithSHA384");
+            provider.addAlgorithm("Cipher.ECIESwithSHA512", PREFIX + "IESCipher$ECIESwithSHA512");
+            provider.addAlgorithm("Cipher.ECIESWITHSHA512", PREFIX + "IESCipher$ECIESwithSHA512");
 
             provider.addAlgorithm("Cipher.ECIESwithAES-CBC", PREFIX + "IESCipher$ECIESwithAESCBC");
             provider.addAlgorithm("Cipher.ECIESWITHAES-CBC", PREFIX + "IESCipher$ECIESwithAESCBC");
+            provider.addAlgorithm("Cipher.ECIESwithSHA1andAES-CBC", PREFIX + "IESCipher$ECIESwithAESCBC");
+            provider.addAlgorithm("Cipher.ECIESWITHSHA1ANDAES-CBC", PREFIX + "IESCipher$ECIESwithAESCBC");
+            provider.addAlgorithm("Cipher.ECIESwithSHA256andAES-CBC", PREFIX + "IESCipher$ECIESwithSHA256andAESCBC");
+            provider.addAlgorithm("Cipher.ECIESWITHSHA256ANDAES-CBC", PREFIX + "IESCipher$ECIESwithSHA256andAESCBC");
+            provider.addAlgorithm("Cipher.ECIESwithSHA384andAES-CBC", PREFIX + "IESCipher$ECIESwithSHA384andAESCBC");
+            provider.addAlgorithm("Cipher.ECIESWITHSHA384ANDAES-CBC", PREFIX + "IESCipher$ECIESwithSHA384andAESCBC");
+            provider.addAlgorithm("Cipher.ECIESwithSHA512andAES-CBC", PREFIX + "IESCipher$ECIESwithSHA512andAESCBC");
+            provider.addAlgorithm("Cipher.ECIESWITHSHA512ANDAES-CBC", PREFIX + "IESCipher$ECIESwithSHA512andAESCBC");
+
             provider.addAlgorithm("Cipher.ECIESwithDESEDE-CBC", PREFIX + "IESCipher$ECIESwithDESedeCBC");
             provider.addAlgorithm("Cipher.ECIESWITHDESEDE-CBC", PREFIX + "IESCipher$ECIESwithDESedeCBC");
+            provider.addAlgorithm("Cipher.ECIESwithSHA1andDESEDE-CBC", PREFIX + "IESCipher$ECIESwithDESedeCBC");
+            provider.addAlgorithm("Cipher.ECIESWITHSHA1ANDDESEDE-CBC", PREFIX + "IESCipher$ECIESwithDESedeCBC");
+            provider.addAlgorithm("Cipher.ECIESwithSHA256andDESEDE-CBC", PREFIX + "IESCipher$ECIESwithSHA256andDESedeCBC");
+            provider.addAlgorithm("Cipher.ECIESWITHSHA256ANDDESEDE-CBC", PREFIX + "IESCipher$ECIESwithSHA256andDESedeCBC");
+            provider.addAlgorithm("Cipher.ECIESwithSHA384andDESEDE-CBC", PREFIX + "IESCipher$ECIESwithSHA384andDESedeCBC");
+            provider.addAlgorithm("Cipher.ECIESWITHSHA384ANDDESEDE-CBC", PREFIX + "IESCipher$ECIESwithSHA384andDESedeCBC");
+            provider.addAlgorithm("Cipher.ECIESwithSHA512andDESEDE-CBC", PREFIX + "IESCipher$ECIESwithSHA512andDESedeCBC");
+            provider.addAlgorithm("Cipher.ECIESWITHSHA512ANDDESEDE-CBC", PREFIX + "IESCipher$ECIESwithSHA512andDESedeCBC");
+
+            provider.addAlgorithm("Cipher.ETSIKEMWITHSHA256", PREFIX + "IESKEMCipher$KEMwithSHA256");
 
             provider.addAlgorithm("Signature.ECDSA", PREFIX + "SignatureSpi$ecDSA");
             provider.addAlgorithm("Signature.NONEwithECDSA", PREFIX + "SignatureSpi$ecDSAnone");
@@ -241,7 +269,8 @@ public class EC
             addSignatureAlgorithm(provider, "SHA3-256", "ECDSA", PREFIX + "SignatureSpi$ecDSASha3_256", NISTObjectIdentifiers.id_ecdsa_with_sha3_256);
             addSignatureAlgorithm(provider, "SHA3-384", "ECDSA", PREFIX + "SignatureSpi$ecDSASha3_384", NISTObjectIdentifiers.id_ecdsa_with_sha3_384);
             addSignatureAlgorithm(provider, "SHA3-512", "ECDSA", PREFIX + "SignatureSpi$ecDSASha3_512", NISTObjectIdentifiers.id_ecdsa_with_sha3_512);
-
+            addSignatureAlgorithm(provider, "SHAKE128", "ECDSA", PREFIX + "SignatureSpi$ecDSAShake128", CMSObjectIdentifiers.id_ecdsa_with_shake128);
+            addSignatureAlgorithm(provider, "SHAKE256", "ECDSA", PREFIX + "SignatureSpi$ecDSAShake256", CMSObjectIdentifiers.id_ecdsa_with_shake256);
             addSignatureAlgorithm(provider, "RIPEMD160", "ECDSA", PREFIX + "SignatureSpi$ecDSARipeMD160",TeleTrusTObjectIdentifiers.ecSignWithRipemd160);
 
             provider.addAlgorithm("Signature.SHA1WITHECNR", PREFIX + "SignatureSpi$ecNR");
@@ -262,6 +291,10 @@ public class EC
             addSignatureAlgorithm(provider, "SHA384", "PLAIN-ECDSA", PREFIX + "SignatureSpi$ecCVCDSA384", BSIObjectIdentifiers.ecdsa_plain_SHA384);
             addSignatureAlgorithm(provider, "SHA512", "PLAIN-ECDSA", PREFIX + "SignatureSpi$ecCVCDSA512", BSIObjectIdentifiers.ecdsa_plain_SHA512);
             addSignatureAlgorithm(provider, "RIPEMD160", "PLAIN-ECDSA", PREFIX + "SignatureSpi$ecPlainDSARP160", BSIObjectIdentifiers.ecdsa_plain_RIPEMD160);
+            addSignatureAlgorithm(provider, "SHA3-224", "PLAIN-ECDSA", PREFIX + "SignatureSpi$ecCVCDSA3_224", BSIObjectIdentifiers.ecdsa_plain_SHA3_224);
+            addSignatureAlgorithm(provider, "SHA3-256", "PLAIN-ECDSA", PREFIX + "SignatureSpi$ecCVCDSA3_256", BSIObjectIdentifiers.ecdsa_plain_SHA3_256);
+            addSignatureAlgorithm(provider, "SHA3-384", "PLAIN-ECDSA", PREFIX + "SignatureSpi$ecCVCDSA3_384", BSIObjectIdentifiers.ecdsa_plain_SHA3_384);
+            addSignatureAlgorithm(provider, "SHA3-512", "PLAIN-ECDSA", PREFIX + "SignatureSpi$ecCVCDSA3_512", BSIObjectIdentifiers.ecdsa_plain_SHA3_512);
         }
     }
 }

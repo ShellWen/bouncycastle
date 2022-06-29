@@ -156,6 +156,6 @@ public class PublicKeyPacket
         BCPGOutputStream    out)
         throws IOException
     {
-        out.writePacket(PUBLIC_KEY, getEncodedContents(), true);
+        out.writePacket(PUBLIC_KEY, getEncodedContents());
     }
 }

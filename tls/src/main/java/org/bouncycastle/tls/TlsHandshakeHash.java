@@ -17,13 +17,13 @@ public interface TlsHandshakeHash
 
     void notifyPRFDetermined();
 
-    void trackHashAlgorithm(short hashAlgorithm);
+    void trackHashAlgorithm(int cryptoHashAlgorithm);
 
     void sealHashAlgorithms();
 
-    TlsHandshakeHash stopTracking();
+    void stopTracking();
 
     TlsHash forkPRFHash();
 
-    byte[] getFinalHash(short hashAlgorithm);
+    byte[] getFinalHash(int cryptoHashAlgorithm);
 }

@@ -8,14 +8,15 @@ import java.util.Vector;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1GeneralizedTime;
+import org.bouncycastle.asn1.ASN1IA5String;
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OutputStream;
 import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.ASN1PrintableString;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
-import org.bouncycastle.asn1.DERIA5String;
-import org.bouncycastle.asn1.DERPrintableString;
+import org.bouncycastle.asn1.ASN1UTF8String;
 import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.DERUTF8String;
@@ -96,7 +97,7 @@ public class X509NameTest
     private void testEncodingPrintableString(ASN1ObjectIdentifier oid, String value)
     {
         ASN1Encodable converted = createEntryValue(oid, value);
-        if (!(converted instanceof DERPrintableString))
+        if (!(converted instanceof ASN1PrintableString))
         {
             fail("encoding for " + oid + " not printable string");
         }
@@ -105,7 +106,7 @@ public class X509NameTest
     private void testEncodingIA5String(ASN1ObjectIdentifier oid, String value)
     {
         ASN1Encodable converted = createEntryValue(oid, value);
-        if (!(converted instanceof DERIA5String))
+        if (!(converted instanceof ASN1IA5String))
         {
             fail("encoding for " + oid + " not IA5String");
         }
@@ -116,11 +117,11 @@ public class X509NameTest
         throws IOException
     {
         ASN1Encodable converted = createEntryValue(oid, value);
-        if (!(converted instanceof DERUTF8String))
+        if (!(converted instanceof ASN1UTF8String))
         {
-            fail("encoding for " + oid + " not IA5String");
+            fail("encoding for " + oid + " not UTF8String");
         }
-        if (!value.equals((DERUTF8String.getInstance(converted.toASN1Primitive().getEncoded()).getString())))
+        if (!value.equals((ASN1UTF8String.getInstance(converted.toASN1Primitive().getEncoded()).getString())))
         {
             fail("decoding not correct");
         }
@@ -484,12 +485,12 @@ public class X509NameTest
         }
         */
 
-        DERUTF8String testString = new DERUTF8String("The Legion of the Bouncy Castle");
+        ASN1UTF8String testString = new DERUTF8String("The Legion of the Bouncy Castle");
         byte[] encodedBytes = testString.getEncoded();
         byte[] hexEncodedBytes = Hex.encode(encodedBytes);
         String hexEncodedString = "#" + new String(hexEncodedBytes);
 
-        DERUTF8String converted = (DERUTF8String)
+        ASN1UTF8String converted = (ASN1UTF8String)
             new X509DefaultEntryConverter().getConvertedValue(
                 X509Name.L , hexEncodedString);
 
@@ -501,7 +502,7 @@ public class X509NameTest
         //
         // try escaped.
         //
-        converted = (DERUTF8String)
+        converted = (ASN1UTF8String)
             new X509DefaultEntryConverter().getConvertedValue(
                 X509Name.L , "\\" + hexEncodedString);
 

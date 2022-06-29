@@ -6,9 +6,9 @@ import java.security.MessageDigest;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
-import org.bouncycastle.tls.HashAlgorithm;
 import org.bouncycastle.tls.PRFAlgorithm;
 import org.bouncycastle.tls.TlsUtils;
+import org.bouncycastle.tls.crypto.CryptoHashAlgorithm;
 import org.bouncycastle.tls.crypto.TlsCryptoUtils;
 import org.bouncycastle.tls.crypto.TlsSecret;
 import org.bouncycastle.tls.crypto.impl.AbstractTlsCrypto;
@@ -22,6 +22,23 @@ import org.bouncycastle.util.Strings;
 public class JceTlsSecret
     extends AbstractTlsSecret
 {
+    public static JceTlsSecret convert(JcaTlsCrypto crypto, TlsSecret secret)
+    {
+        if (secret instanceof JceTlsSecret)
+        {
+            return (JceTlsSecret)secret;
+        }
+
+        if (secret instanceof AbstractTlsSecret)
+        {
+            AbstractTlsSecret abstractTlsSecret = (AbstractTlsSecret)secret;
+
+            return crypto.adoptLocalSecret(copyData(abstractTlsSecret));
+        }
+
+        throw new IllegalArgumentException("unrecognized TlsSecret - cannot copy data: " + secret.getClass().getName());
+    }
+
     // SSL3 magic mix constants ("A", "BB", "CCC", ...)
     private static final byte[] SSL3_CONST = generateSSL3Constants();
 
@@ -59,9 +76,11 @@ public class JceTlsSecret
             switch (prfAlgorithm)
             {
             case PRFAlgorithm.tls13_hkdf_sha256:
-                return TlsCryptoUtils.hkdfExpandLabel(this, HashAlgorithm.sha256, label, seed, length);
+                return TlsCryptoUtils.hkdfExpandLabel(this, CryptoHashAlgorithm.sha256, label, seed, length);
             case PRFAlgorithm.tls13_hkdf_sha384:
-                return TlsCryptoUtils.hkdfExpandLabel(this, HashAlgorithm.sha384, label, seed, length);
+                return TlsCryptoUtils.hkdfExpandLabel(this, CryptoHashAlgorithm.sha384, label, seed, length);
+            case PRFAlgorithm.tls13_hkdf_sm3:
+                return TlsCryptoUtils.hkdfExpandLabel(this, CryptoHashAlgorithm.sm3, label, seed, length);
             default:
                 return crypto.adoptLocalSecret(prf(prfAlgorithm, label, seed, length));
             }
@@ -72,14 +91,14 @@ public class JceTlsSecret
         }
     }
 
-    public synchronized TlsSecret hkdfExpand(short hashAlgorithm, byte[] info, int length)
+    public synchronized TlsSecret hkdfExpand(int cryptoHashAlgorithm, byte[] info, int length)
     {
         if (length < 1)
         {
             return crypto.adoptLocalSecret(TlsUtils.EMPTY_BYTES);
         }
 
-        int hashLen = HashAlgorithm.getOutputSize(hashAlgorithm);
+        int hashLen = TlsCryptoUtils.getHashOutputSize(cryptoHashAlgorithm);
         if (length > (255 * hashLen))
         {
             throw new IllegalArgumentException("'length' must be <= 255 * (output size of 'hashAlgorithm')");
@@ -91,7 +110,7 @@ public class JceTlsSecret
 
         try
         {
-            String algorithm = crypto.getHMACAlgorithmName(hashAlgorithm);
+            String algorithm = crypto.getHMACAlgorithmName(cryptoHashAlgorithm);
             Mac hmac = crypto.getHelper().createMac(algorithm);
             hmac.init(new SecretKeySpec(prk, 0, prk.length, algorithm));
 
@@ -127,7 +146,7 @@ public class JceTlsSecret
         }
     }
 
-    public synchronized TlsSecret hkdfExtract(short hashAlgorithm, byte[] ikm)
+    public synchronized TlsSecret hkdfExtract(int cryptoHashAlgorithm, TlsSecret ikm)
     {
         checkAlive();
 
@@ -136,11 +155,11 @@ public class JceTlsSecret
 
         try
         {
-            String algorithm = crypto.getHMACAlgorithmName(hashAlgorithm);
+            String algorithm = crypto.getHMACAlgorithmName(cryptoHashAlgorithm);
             Mac hmac = crypto.getHelper().createMac(algorithm);
             hmac.init(new SecretKeySpec(salt, 0, salt.length, algorithm));
 
-            hmac.update(ikm, 0, ikm.length);
+            convert(crypto, ikm).updateMac(hmac);
 
             byte[] prk = hmac.doFinal();
 
@@ -157,9 +176,10 @@ public class JceTlsSecret
         return crypto;
     }
 
-    protected void hmacHash(String digestName, byte[] secret, int secretOff, int secretLen, byte[] seed, byte[] output)
-        throws GeneralSecurityException
+    protected void hmacHash(int cryptoHashAlgorithm, byte[] secret, int secretOff, int secretLen, byte[] seed,
+        byte[] output) throws GeneralSecurityException
     {
+        String digestName = crypto.getDigestName(cryptoHashAlgorithm).replaceAll("-", "");
         String macName = "Hmac" + digestName;
         Mac mac = crypto.getHelper().createMac(macName);
         mac.init(new SecretKeySpec(secret, secretOff, secretLen, macName));
@@ -251,10 +271,10 @@ public class JceTlsSecret
         int s_half = (data.length + 1) / 2;
 
         byte[] b1 = new byte[length];
-        hmacHash("MD5", data, 0, s_half, labelSeed, b1);
+        hmacHash(CryptoHashAlgorithm.md5, data, 0, s_half, labelSeed, b1);
 
         byte[] b2 = new byte[length];
-        hmacHash("SHA1", data, data.length - s_half, s_half, labelSeed, b2);
+        hmacHash(CryptoHashAlgorithm.sha1, data, data.length - s_half, s_half, labelSeed, b2);
 
         for (int i = 0; i < length; i++)
         {
@@ -266,9 +286,16 @@ public class JceTlsSecret
     protected byte[] prf_1_2(int prfAlgorithm, byte[] labelSeed, int length)
         throws GeneralSecurityException
     {
-        String digestName = crypto.getDigestName(TlsUtils.getHashAlgorithmForPRFAlgorithm(prfAlgorithm)).replaceAll("-", "");
+        int cryptoHashAlgorithm = TlsCryptoUtils.getHashForPRF(prfAlgorithm);
         byte[] result = new byte[length];
-        hmacHash(digestName, data, 0, data.length, labelSeed, result);
+        hmacHash(cryptoHashAlgorithm, data, 0, data.length, labelSeed, result);
         return result;
+    }
+
+    protected synchronized void updateMac(Mac mac)
+    {
+        checkAlive();
+
+        mac.update(data, 0, data.length);
     }
 }

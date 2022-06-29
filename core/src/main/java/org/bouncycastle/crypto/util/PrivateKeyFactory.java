@@ -129,12 +129,12 @@ public class PrivateKeyFactory
         else if (algOID.equals(X9ObjectIdentifiers.id_dsa))
         {
             ASN1Integer derX = (ASN1Integer)keyInfo.parsePrivateKey();
-            ASN1Encodable de = algId.getParameters();
+            ASN1Encodable algParameters = algId.getParameters();
 
             DSAParameters parameters = null;
-            if (de != null)
+            if (algParameters != null)
             {
-                DSAParameter params = DSAParameter.getInstance(de.toASN1Primitive());
+                DSAParameter params = DSAParameter.getInstance(algParameters.toASN1Primitive());
                 parameters = new DSAParameters(params.getP(), params.getQ(), params.getG());
             }
 
@@ -172,32 +172,32 @@ public class PrivateKeyFactory
         }
         else if (algOID.equals(EdECObjectIdentifiers.id_X25519))
         {
-            return new X25519PrivateKeyParameters(getRawKey(keyInfo, X25519PrivateKeyParameters.KEY_SIZE), 0);
+            return new X25519PrivateKeyParameters(getRawKey(keyInfo));
         }
         else if (algOID.equals(EdECObjectIdentifiers.id_X448))
         {
-            return new X448PrivateKeyParameters(getRawKey(keyInfo, X448PrivateKeyParameters.KEY_SIZE), 0);
+            return new X448PrivateKeyParameters(getRawKey(keyInfo));
         }
         else if (algOID.equals(EdECObjectIdentifiers.id_Ed25519))
         {
-            return new Ed25519PrivateKeyParameters(getRawKey(keyInfo, Ed25519PrivateKeyParameters.KEY_SIZE), 0);
+            return new Ed25519PrivateKeyParameters(getRawKey(keyInfo));
         }
         else if (algOID.equals(EdECObjectIdentifiers.id_Ed448))
         {
-            return new Ed448PrivateKeyParameters(getRawKey(keyInfo, Ed448PrivateKeyParameters.KEY_SIZE), 0);
+            return new Ed448PrivateKeyParameters(getRawKey(keyInfo));
         }
         else if (
             algOID.equals(CryptoProObjectIdentifiers.gostR3410_2001) ||
                 algOID.equals(RosstandartObjectIdentifiers.id_tc26_gost_3410_12_512) ||
                 algOID.equals(RosstandartObjectIdentifiers.id_tc26_gost_3410_12_256))
         {
-            GOST3410PublicKeyAlgParameters gostParams = GOST3410PublicKeyAlgParameters.getInstance(keyInfo.getPrivateKeyAlgorithm().getParameters());
+            ASN1Encodable algParameters = algId.getParameters();
+            GOST3410PublicKeyAlgParameters gostParams = GOST3410PublicKeyAlgParameters.getInstance(algParameters);
             ECGOST3410Parameters ecSpec = null;
             BigInteger d = null;
-            ASN1Primitive p = keyInfo.getPrivateKeyAlgorithm().getParameters().toASN1Primitive();
+            ASN1Primitive p = algParameters.toASN1Primitive();
             if (p instanceof ASN1Sequence && (ASN1Sequence.getInstance(p).size() == 2 || ASN1Sequence.getInstance(p).size() == 3))
             {
-
                 X9ECParameters ecP = ECGOST3410NamedCurves.getByOIDX9(gostParams.getPublicKeyParamSet());
 
                 ecSpec = new ECGOST3410Parameters(
@@ -228,7 +228,7 @@ public class PrivateKeyFactory
             }
             else
             {
-                X962Parameters params = X962Parameters.getInstance(keyInfo.getPrivateKeyAlgorithm().getParameters());
+                X962Parameters params = X962Parameters.getInstance(algId.getParameters());
 
                 if (params.isNamedCurve())
                 {
@@ -282,14 +282,8 @@ public class PrivateKeyFactory
         }
     }
 
-    private static byte[] getRawKey(PrivateKeyInfo keyInfo, int expectedSize)
-        throws IOException
+    private static byte[] getRawKey(PrivateKeyInfo keyInfo) throws IOException
     {
-        byte[] result = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
-        if (expectedSize != result.length)
-        {
-            throw new RuntimeException("private key encoding has incorrect length");
-        }
-        return result;
+        return ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
     }
 }

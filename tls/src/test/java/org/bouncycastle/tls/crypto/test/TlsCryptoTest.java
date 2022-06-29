@@ -1,23 +1,39 @@
 package org.bouncycastle.tls.crypto.test;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.math.BigInteger;
 
+import org.bouncycastle.tls.CombinedHash;
 import org.bouncycastle.tls.DefaultTlsDHGroupVerifier;
+import org.bouncycastle.tls.DigitallySigned;
 import org.bouncycastle.tls.HashAlgorithm;
 import org.bouncycastle.tls.NamedGroup;
+import org.bouncycastle.tls.ProtocolVersion;
+import org.bouncycastle.tls.SignatureAlgorithm;
+import org.bouncycastle.tls.SignatureAndHashAlgorithm;
+import org.bouncycastle.tls.SignatureScheme;
+import org.bouncycastle.tls.TlsCredentialedSigner;
 import org.bouncycastle.tls.TlsDHUtils;
 import org.bouncycastle.tls.TlsUtils;
+import org.bouncycastle.tls.crypto.CryptoHashAlgorithm;
 import org.bouncycastle.tls.crypto.DHGroup;
+import org.bouncycastle.tls.crypto.Tls13Verifier;
 import org.bouncycastle.tls.crypto.TlsAgreement;
+import org.bouncycastle.tls.crypto.TlsCertificate;
 import org.bouncycastle.tls.crypto.TlsCrypto;
+import org.bouncycastle.tls.crypto.TlsCryptoParameters;
 import org.bouncycastle.tls.crypto.TlsCryptoUtils;
 import org.bouncycastle.tls.crypto.TlsDHConfig;
 import org.bouncycastle.tls.crypto.TlsDHDomain;
 import org.bouncycastle.tls.crypto.TlsECConfig;
 import org.bouncycastle.tls.crypto.TlsECDomain;
-import org.bouncycastle.tls.crypto.TlsHMAC;
 import org.bouncycastle.tls.crypto.TlsHash;
 import org.bouncycastle.tls.crypto.TlsSecret;
+import org.bouncycastle.tls.crypto.TlsStreamSigner;
+import org.bouncycastle.tls.crypto.TlsStreamVerifier;
+import org.bouncycastle.tls.crypto.TlsVerifier;
+import org.bouncycastle.tls.test.TlsTestUtils;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.encoders.Hex;
 
@@ -87,6 +103,102 @@ public abstract class TlsCryptoTest
         this.crypto = crypto;
     }
 
+    protected TlsCredentialedSigner loadCredentialedSigner(TlsCryptoParameters cryptoParams, String resource,
+        SignatureAndHashAlgorithm signatureAndHashAlgorithm) throws IOException
+    {
+        return TlsTestUtils.loadSignerCredentials(cryptoParams, crypto,
+            new String[]{ "x509-server-" + resource + ".pem" }, "x509-server-key-" + resource + ".pem",
+            signatureAndHashAlgorithm);
+    }
+
+    protected TlsCredentialedSigner loadCredentialedSignerLegacy(TlsCryptoParameters cryptoParams,
+        short signatureAlgorithm) throws IOException
+    {
+        switch (signatureAlgorithm)
+        {
+        case SignatureAlgorithm.dsa:
+            return loadCredentialedSigner(cryptoParams, "dsa", null);
+        case SignatureAlgorithm.ecdsa:
+            return loadCredentialedSigner(cryptoParams, "ecdsa", null);
+        case SignatureAlgorithm.rsa:
+            return loadCredentialedSigner(cryptoParams, "rsa-sign", null);
+        default:
+            return null;
+        }
+    }
+
+    protected TlsCredentialedSigner loadCredentialedSigner12(TlsCryptoParameters cryptoParams,
+        SignatureAndHashAlgorithm signatureAndHashAlgorithm) throws IOException
+    {
+        switch (signatureAndHashAlgorithm.getSignature())
+        {
+        case SignatureAlgorithm.dsa:
+            return loadCredentialedSigner(cryptoParams, "dsa", signatureAndHashAlgorithm);
+        case SignatureAlgorithm.ecdsa:
+            return loadCredentialedSigner(cryptoParams, "ecdsa", signatureAndHashAlgorithm);
+        case SignatureAlgorithm.ed25519:
+            return loadCredentialedSigner(cryptoParams, "ed25519", signatureAndHashAlgorithm);
+        case SignatureAlgorithm.ed448:
+            return loadCredentialedSigner(cryptoParams, "ed448", signatureAndHashAlgorithm);
+        case SignatureAlgorithm.rsa_pss_pss_sha256:
+            return loadCredentialedSigner(cryptoParams, "rsa_pss_256", signatureAndHashAlgorithm);
+        case SignatureAlgorithm.rsa_pss_pss_sha384:
+            return loadCredentialedSigner(cryptoParams, "rsa_pss_384", signatureAndHashAlgorithm);
+        case SignatureAlgorithm.rsa_pss_pss_sha512:
+            return loadCredentialedSigner(cryptoParams, "rsa_pss_512", signatureAndHashAlgorithm);
+        case SignatureAlgorithm.rsa:
+        case SignatureAlgorithm.rsa_pss_rsae_sha256:
+        case SignatureAlgorithm.rsa_pss_rsae_sha384:
+        case SignatureAlgorithm.rsa_pss_rsae_sha512:
+            return loadCredentialedSigner(cryptoParams, "rsa-sign", signatureAndHashAlgorithm);
+
+        // TODO[draft-smyshlyaev-tls12-gost-suites-10] Add test resources for these
+        case SignatureAlgorithm.gostr34102012_256:
+        case SignatureAlgorithm.gostr34102012_512:
+
+        default:
+            return null;
+        }
+    }
+
+    protected TlsCredentialedSigner loadCredentialedSigner13(TlsCryptoParameters cryptoParams, int signatureScheme)
+        throws IOException
+    {
+        SignatureAndHashAlgorithm signatureAndHashAlgorithm = SignatureScheme.getSignatureAndHashAlgorithm(
+            signatureScheme);
+
+        switch (signatureScheme)
+        {
+        case SignatureScheme.ecdsa_secp256r1_sha256:
+            return loadCredentialedSigner(cryptoParams, "ecdsa", signatureAndHashAlgorithm);
+        case SignatureScheme.ed25519:
+            return loadCredentialedSigner(cryptoParams, "ed25519", signatureAndHashAlgorithm);
+        case SignatureScheme.ed448:
+            return loadCredentialedSigner(cryptoParams, "ed448", signatureAndHashAlgorithm);
+        case SignatureScheme.rsa_pss_pss_sha256:
+            return loadCredentialedSigner(cryptoParams, "rsa_pss_256", signatureAndHashAlgorithm);
+        case SignatureScheme.rsa_pss_pss_sha384:
+            return loadCredentialedSigner(cryptoParams, "rsa_pss_384", signatureAndHashAlgorithm);
+        case SignatureScheme.rsa_pss_pss_sha512:
+            return loadCredentialedSigner(cryptoParams, "rsa_pss_512", signatureAndHashAlgorithm);
+        case SignatureScheme.rsa_pss_rsae_sha256:
+        case SignatureScheme.rsa_pss_rsae_sha384:
+        case SignatureScheme.rsa_pss_rsae_sha512:
+            return loadCredentialedSigner(cryptoParams, "rsa-sign", signatureAndHashAlgorithm);
+
+        // TODO[tls] Add test resources for these
+        case SignatureScheme.ecdsa_brainpoolP256r1tls13_sha256:
+        case SignatureScheme.ecdsa_brainpoolP384r1tls13_sha384:
+        case SignatureScheme.ecdsa_brainpoolP512r1tls13_sha512:
+        case SignatureScheme.ecdsa_secp384r1_sha384:
+        case SignatureScheme.ecdsa_secp521r1_sha512:
+        case SignatureScheme.sm2sig_sm3:
+
+        default:
+            return null;
+        }
+    }
+
     public void testDHDomain() throws Exception
     {
         if (!crypto.hasDHAgreement())
@@ -105,11 +217,20 @@ public abstract class TlsCryptoTest
             implTestDHDomain(new TlsDHConfig(namedGroup, true));
         }
 
-        new DefaultTlsDHGroupVerifier() {{
-            for (int i = 0; i < DEFAULT_GROUPS.size(); ++i)
+        new DefaultTlsDHGroupVerifier()
+        {{
+            for (int i = 0; i < groups.size(); ++i)
             {
-                DHGroup dhGroup = (DHGroup)DEFAULT_GROUPS.elementAt(i);
-                int namedGroup = TlsDHUtils.getNamedGroupForDHParameters(dhGroup.getP(), dhGroup.getG());
+                DHGroup dhGroup = (DHGroup)groups.elementAt(i);
+                BigInteger p = dhGroup.getP(), g = dhGroup.getG();
+
+                /*
+                 * DefaultTlsDHGroupVerifier default groups are configured from DHStandardGroups, so
+                 * we expect to recover the exact instance here.
+                 */
+                assertSame(dhGroup, TlsDHUtils.getStandardGroupForDHParameters(p, g));
+
+                int namedGroup = TlsDHUtils.getNamedGroupForDHParameters(p, g);
                 if (NamedGroup.refersToASpecificFiniteField(namedGroup))
                 {
                     // Already tested the named groups
@@ -139,15 +260,14 @@ public abstract class TlsCryptoTest
         }
     }
 
-    public void testHKDF()
-        throws IOException
+    public void testHKDF() throws IOException
     {
         /*
          * Test vectors drawn from the server-side calculations of example handshake trace in RFC 8448, section 3.
          */
 
-        short hash = HashAlgorithm.sha256;
-        int hashLen = HashAlgorithm.getOutputSize(hash);
+        int hash = CryptoHashAlgorithm.sha256;
+        int hashLen = TlsCryptoUtils.getHashOutputSize(hash);
 
         TlsSecret init = crypto.hkdfInit(hash), early, handshake, master, c_hs_t, s_hs_t, c_ap_t, s_ap_t, exp_master, res_master;
 
@@ -158,7 +278,7 @@ public abstract class TlsCryptoTest
 
         // {server}  extract secret "early":
         {
-            byte[] ikm = new byte[32];
+            TlsSecret ikm = crypto.hkdfInit(hash);
             early = init.hkdfExtract(hash, ikm);
             expect(early, "33 ad 0a 1c 60 7e c0 3b 09 e6 cd 98 93 68 0c e2 10 ad f3 00 aa 1f 26 60 e1 b2 2e 10 f1 70 f9 2a");
         }
@@ -172,7 +292,8 @@ public abstract class TlsCryptoTest
 
         // {server}  extract secret "handshake":
         {
-            byte[] ikm = hex("8b d4 05 4f b5 5b 9d 63 fd fb ac f9 f0 4b 9f 0d 35 e6 d6 3f 53 75 63 ef d4 62 72 90 0f 89 49 2d");
+            TlsSecret ikm = crypto.createSecret(
+                hex("8b d4 05 4f b5 5b 9d 63 fd fb ac f9 f0 4b 9f 0d 35 e6 d6 3f 53 75 63 ef d4 62 72 90 0f 89 49 2d"));
             handshake = handshake.hkdfExtract(hash, ikm);
             expect(handshake, "1d c8 26 e9 36 06 aa 6f dc 0a ad c1 2f 74 1b 01 04 6a a6 b9 9f 69 1e d2 21 a9 f0 ca 04 3f be ac");
         }
@@ -206,7 +327,7 @@ public abstract class TlsCryptoTest
 
         // {server}  extract secret "master":
         {
-            byte[] ikm = new byte[32];
+            TlsSecret ikm = crypto.hkdfInit(hash);
             master = master.hkdfExtract(hash, ikm);
             expect(master, "18 df 06 84 3d 13 a0 8b f2 a4 49 84 4c 5f 8a 47 80 01 bc 4d 4c 62 79 84 d5 a4 1d a8 d0 40 29 19");
         }
@@ -233,7 +354,7 @@ public abstract class TlsCryptoTest
             byte[] transcriptHash = getCurrentHash(prfHash);
             expect(transcriptHash, "ed b7 72 5f a7 a3 47 3b 03 1e c8 ef 65 a2 48 54 93 90 01 38 a2 b9 12 91 40 7d 79 51 a0 61 10 ed");
 
-            byte[] finished = calculateHMAC(hash, expanded, transcriptHash);
+            byte[] finished = expanded.calculateHMAC(hash, transcriptHash, 0, transcriptHash.length);
             expect(finished, hex("9b 9b 14 1d 90 63 37 fb d2 cb dc e7 1d f4 de da 4a b4 2c 30 95 72 cb 7f ff ee 54 54 b7 8f 07 18"));
         }
 
@@ -287,7 +408,7 @@ public abstract class TlsCryptoTest
             expect(expanded, "b8 0a d0 10 15 fb 2f 0b d6 5f f7 d4 da 5d 6b f8 3f 84 82 1d 1f 87 fd c7 d3 c7 5b 5a 7b 42 d9 c4");
 
             // TODO Mention this transcript hash in RFC 8448 data?
-            byte[] finished = calculateHMAC(hash, expanded, serverFinishedTranscriptHash);
+            byte[] finished = expanded.calculateHMAC(hash, serverFinishedTranscriptHash, 0, serverFinishedTranscriptHash.length);
             expect(finished, hex("a8 ec 43 6d 67 76 34 ae 52 5a c1 fc eb e1 1a 03 9e c1 76 94 fa c6 e9 85 27 b6 42 f2 ed d5 ce 61"));
         }
 
@@ -321,18 +442,24 @@ public abstract class TlsCryptoTest
 
     public void testHKDFExpandLimit()
     {
-        short[] hashes = new short[]{ HashAlgorithm.md5, HashAlgorithm.sha1, HashAlgorithm.sha224,
-            HashAlgorithm.sha256, HashAlgorithm.sha384, HashAlgorithm.sha512 };
+        int[] hashes = new int[] { CryptoHashAlgorithm.md5, CryptoHashAlgorithm.sha1, CryptoHashAlgorithm.sha224,
+            CryptoHashAlgorithm.sha256, CryptoHashAlgorithm.sha384, CryptoHashAlgorithm.sha512,
+            CryptoHashAlgorithm.sm3 };
 
         for (int i = 0; i < hashes.length; ++i)
         {
-            short hash = HashAlgorithm.sha256;
-            int hashLen = HashAlgorithm.getOutputSize(hash);
-            byte[] zeroes = new byte[hashLen];
+            int hash = hashes[i];
+            if (!crypto.hasHKDFAlgorithm(hash))
+            {
+                continue;
+            }
+
+            int hashLen = TlsCryptoUtils.getHashOutputSize(hash);
+            TlsSecret zeros = crypto.hkdfInit(hash);
 
             int limit = 255 * hashLen;
 
-            TlsSecret secret = crypto.hkdfInit(hash).hkdfExtract(hash, zeroes);
+            TlsSecret secret = crypto.hkdfInit(hash).hkdfExtract(hash, zeros);
 
             try
             {
@@ -359,14 +486,115 @@ public abstract class TlsCryptoTest
         }
     }
 
-    private byte[] calculateHMAC(short hash, TlsSecret hmacKey, byte[] hmacInput)
+    public void testSignaturesLegacy() throws Exception
     {
-        byte[] keyBytes = extract(hmacKey);
+        short[] signatureAlgorithms = new short[]{ SignatureAlgorithm.dsa, SignatureAlgorithm.ecdsa,
+            SignatureAlgorithm.rsa };
 
-        TlsHMAC hmac = crypto.createHMAC(hash);
-        hmac.setKey(keyBytes, 0, keyBytes.length);
-        hmac.update(hmacInput, 0, hmacInput.length);
-        return hmac.calculateMAC();
+        TlsCryptoParameters cryptoParams = new TestTlsCryptoParameters(ProtocolVersion.TLSv11);
+
+        for (int i = 0; i < signatureAlgorithms.length; ++i)
+        {
+            short signatureAlgorithm = signatureAlgorithms[i];
+            if (!crypto.hasSignatureAlgorithm(signatureAlgorithm))
+            {
+                continue;
+            }
+
+            TlsCredentialedSigner credentialedSigner = loadCredentialedSignerLegacy(cryptoParams, signatureAlgorithm);
+            if (null != credentialedSigner)
+            {
+                implTestSignatureLegacy(credentialedSigner);
+            }
+        }
+    }
+
+    public void testSignatures12() throws Exception
+    {
+        short[] hashAlgorithms = new short[]{ HashAlgorithm.md5, HashAlgorithm.sha1, HashAlgorithm.sha224,
+            HashAlgorithm.sha256, HashAlgorithm.sha384, HashAlgorithm.sha512 };
+        short[] signatureAlgorithms = new short[]{ SignatureAlgorithm.dsa, SignatureAlgorithm.ecdsa,
+            SignatureAlgorithm.rsa };
+
+        TlsCryptoParameters cryptoParams = new TestTlsCryptoParameters(ProtocolVersion.TLSv12);
+
+        for (int i = 0; i < signatureAlgorithms.length; ++i)
+        {
+            short signatureAlgorithm = signatureAlgorithms[i];
+
+            for (int j = 0; j < hashAlgorithms.length; ++j)
+            {
+                SignatureAndHashAlgorithm signatureAndHashAlgorithm = SignatureAndHashAlgorithm.getInstance(
+                    hashAlgorithms[j], signatureAlgorithm);
+                if (!crypto.hasSignatureAndHashAlgorithm(signatureAndHashAlgorithm))
+                {
+                    continue;
+                }
+
+                TlsCredentialedSigner credentialedSigner = loadCredentialedSigner12(cryptoParams,
+                    signatureAndHashAlgorithm);
+                if (null != credentialedSigner)
+                {
+                    implTestSignature12(credentialedSigner, signatureAndHashAlgorithm);
+                }
+            }
+        }
+
+        // Signature algorithms usable with HashAlgorithm.Intrinsic in TLS 1.2
+        short[] intrinsicSignatureAlgorithms = new short[] { SignatureAlgorithm.ed25519, SignatureAlgorithm.ed448,
+            SignatureAlgorithm.gostr34102012_256, SignatureAlgorithm.gostr34102012_512,
+            SignatureAlgorithm.rsa_pss_pss_sha256, SignatureAlgorithm.rsa_pss_pss_sha384,
+            SignatureAlgorithm.rsa_pss_pss_sha512, SignatureAlgorithm.rsa_pss_rsae_sha256,
+            SignatureAlgorithm.rsa_pss_rsae_sha384, SignatureAlgorithm.rsa_pss_rsae_sha512, };
+
+        for (int i = 0; i < intrinsicSignatureAlgorithms.length; ++i)
+        {
+            SignatureAndHashAlgorithm signatureAndHashAlgorithm = SignatureAndHashAlgorithm.getInstance(
+                HashAlgorithm.Intrinsic, intrinsicSignatureAlgorithms[i]);
+            if (!crypto.hasSignatureAndHashAlgorithm(signatureAndHashAlgorithm))
+            {
+                continue;
+            }
+
+            TlsCredentialedSigner credentialedSigner = loadCredentialedSigner12(cryptoParams,
+                signatureAndHashAlgorithm);
+            if (null != credentialedSigner)
+            {
+                implTestSignature12(credentialedSigner, signatureAndHashAlgorithm);
+            }
+        }
+    }
+
+    public void testSignatures13() throws Exception
+    {
+        int[] signatureSchemes = new int[] { SignatureScheme.ecdsa_brainpoolP256r1tls13_sha256,
+            SignatureScheme.ecdsa_brainpoolP384r1tls13_sha384, SignatureScheme.ecdsa_brainpoolP512r1tls13_sha512,
+            SignatureScheme.ecdsa_secp256r1_sha256, SignatureScheme.ecdsa_secp384r1_sha384,
+            SignatureScheme.ecdsa_secp521r1_sha512, SignatureScheme.ed25519, SignatureScheme.ed448,
+            SignatureScheme.rsa_pss_pss_sha256, SignatureScheme.rsa_pss_pss_sha384, SignatureScheme.rsa_pss_pss_sha512,
+            SignatureScheme.rsa_pss_rsae_sha256, SignatureScheme.rsa_pss_rsae_sha384,
+            SignatureScheme.rsa_pss_rsae_sha512, SignatureScheme.sm2sig_sm3,
+            // These are only used for certs in 1.3 (cert verification is not done by TlsCrypto)
+//            SignatureScheme.ecdsa_sha1, SignatureScheme.rsa_pkcs1_sha1, SignatureScheme.rsa_pkcs1_sha256,
+//            SignatureScheme.rsa_pkcs1_sha384, SignatureScheme.rsa_pkcs1_sha512,
+        };
+
+        TlsCryptoParameters cryptoParams = new TestTlsCryptoParameters(ProtocolVersion.TLSv13);
+
+        for (int i = 0; i < signatureSchemes.length; ++i)
+        {
+            int signatureScheme = signatureSchemes[i];
+            if (!crypto.hasSignatureScheme(signatureScheme))
+            {
+                continue;
+            }
+
+            TlsCredentialedSigner credentialedSigner = loadCredentialedSigner13(cryptoParams, signatureScheme);
+            if (null != credentialedSigner)
+            {
+                implTestSignature13(credentialedSigner, signatureScheme);
+            }
+        }
     }
 
     private void expect(TlsSecret secret, String expectedHex)
@@ -391,7 +619,7 @@ public abstract class TlsCryptoTest
 
     private byte[] getCurrentHash(TlsHash hash)
     {
-        return ((TlsHash)hash.clone()).calculateHash();
+        return hash.cloneHash().calculateHash();
     }
 
     private static void assertArrayEquals(byte[] a, byte[] b)
@@ -402,6 +630,20 @@ public abstract class TlsCryptoTest
     private static byte[] hex(String s)
     {
         return Hex.decode(s.replaceAll(" ", ""));
+    }
+
+    private byte[] implPrehash(int signatureScheme, byte[] message)
+    {
+        int cryptoHashAlgorithm = SignatureScheme.getCryptoHashAlgorithm(signatureScheme);
+        TlsHash tlsHash = crypto.createHash(cryptoHashAlgorithm);
+        tlsHash.update(message, 0, message.length);
+        return tlsHash.calculateHash();
+    }
+
+    private byte[] implPrehash(SignatureAndHashAlgorithm signatureAndHashAlgorithm, byte[] message)
+    {
+        int signatureScheme = SignatureScheme.from(signatureAndHashAlgorithm);
+        return implPrehash(signatureScheme, message);
     }
 
     private void implTestAgreement(TlsAgreement aA, TlsAgreement aB) throws IOException
@@ -453,4 +695,136 @@ public abstract class TlsCryptoTest
             implTestAgreement(aA, aB);
         }
     }
+
+    private void implTestSignatureLegacy(TlsCredentialedSigner credentialedSigner) throws IOException
+    {
+        byte[] message = crypto.createNonceGenerator(TlsUtils.EMPTY_BYTES).generateNonce(100);
+
+        byte[] signature;
+        TlsStreamSigner tlsStreamSigner = credentialedSigner.getStreamSigner();
+        if (null != tlsStreamSigner)
+        {
+            OutputStream output = tlsStreamSigner.getOutputStream();
+            output.write(message);
+            signature = tlsStreamSigner.getSignature();
+        }
+        else
+        {
+            TlsHash tlsHash = new CombinedHash(crypto);
+            tlsHash.update(message, 0, message.length);
+            byte[] hash = tlsHash.calculateHash();
+            signature = credentialedSigner.generateRawSignature(hash);
+        }
+
+        DigitallySigned digitallySigned = new DigitallySigned(null, signature);
+
+        TlsCertificate tlsCertificate = credentialedSigner.getCertificate().getCertificateAt(0);
+        TlsVerifier tlsVerifier = tlsCertificate.createVerifier(tlsCertificate.getLegacySignatureAlgorithm());
+
+        boolean verified;
+        TlsStreamVerifier tlsStreamVerifier = tlsVerifier.getStreamVerifier(digitallySigned);
+        if (null != tlsStreamVerifier)
+        {
+            OutputStream output = tlsStreamVerifier.getOutputStream();
+            output.write(message);
+            verified = tlsStreamVerifier.isVerified();
+        }
+        else
+        {
+            TlsHash tlsHash = new CombinedHash(crypto);
+            tlsHash.update(message, 0, message.length);
+            byte[] hash = tlsHash.calculateHash();
+            verified = tlsVerifier.verifyRawSignature(digitallySigned, hash);
+        }
+
+        assertTrue(verified);
+    }
+
+    private void implTestSignature12(TlsCredentialedSigner credentialedSigner,
+        SignatureAndHashAlgorithm signatureAndHashAlgorithm) throws IOException
+    {
+        byte[] message = crypto.createNonceGenerator(TlsUtils.EMPTY_BYTES).generateNonce(100);
+
+        byte[] signature;
+        TlsStreamSigner tlsStreamSigner = credentialedSigner.getStreamSigner();
+        if (null != tlsStreamSigner)
+        {
+            OutputStream output = tlsStreamSigner.getOutputStream();
+            output.write(message);
+            signature = tlsStreamSigner.getSignature();
+        }
+        else
+        {
+            byte[] hash = implPrehash(signatureAndHashAlgorithm, message);
+            signature = credentialedSigner.generateRawSignature(hash);
+        }
+
+        DigitallySigned digitallySigned = new DigitallySigned(signatureAndHashAlgorithm, signature);
+
+        TlsCertificate tlsCertificate = credentialedSigner.getCertificate().getCertificateAt(0);
+        TlsVerifier tlsVerifier = tlsCertificate.createVerifier(signatureAndHashAlgorithm.getSignature());
+
+        boolean verified;
+        TlsStreamVerifier tlsStreamVerifier = tlsVerifier.getStreamVerifier(digitallySigned);
+        if (null != tlsStreamVerifier)
+        {
+            OutputStream output = tlsStreamVerifier.getOutputStream();
+            output.write(message);
+            verified = tlsStreamVerifier.isVerified();
+        }
+        else
+        {
+            byte[] hash = implPrehash(signatureAndHashAlgorithm, message);
+            verified = tlsVerifier.verifyRawSignature(digitallySigned, hash);
+        }
+
+        assertTrue(verified);
+    }
+
+    private void implTestSignature13(TlsCredentialedSigner credentialedSigner, int signatureScheme)
+        throws IOException
+    {
+        byte[] message = crypto.createNonceGenerator(TlsUtils.EMPTY_BYTES).generateNonce(100);
+
+        byte[] signature;
+        TlsStreamSigner tlsStreamSigner = credentialedSigner.getStreamSigner();
+        if (null != tlsStreamSigner)
+        {
+            OutputStream output = tlsStreamSigner.getOutputStream();
+            output.write(message);
+            signature = tlsStreamSigner.getSignature();
+        }
+        else
+        {
+            byte[] hash = implPrehash(signatureScheme, message);
+            signature = credentialedSigner.generateRawSignature(hash);
+        }
+
+        TlsCertificate tlsCertificate = credentialedSigner.getCertificate().getCertificateAt(0);
+        Tls13Verifier tls13Verifier = tlsCertificate.createVerifier(signatureScheme);
+
+        OutputStream output = tls13Verifier.getOutputStream();
+        output.write(message);
+        boolean verified = tls13Verifier.verifySignature(signature);
+
+        assertTrue(verified);
+    }
+
+    private static class TestTlsCryptoParameters
+        extends TlsCryptoParameters
+    {
+        private final ProtocolVersion serverVersion;
+
+        TestTlsCryptoParameters(ProtocolVersion serverVersion)
+        {
+            super(null);
+
+            this.serverVersion = serverVersion;
+        }
+
+        public ProtocolVersion getServerVersion()
+        {
+            return serverVersion;
+        }
+    };
 }

@@ -3,6 +3,7 @@ package org.bouncycastle.tls.test;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.security.SecureRandom;
+import java.util.Hashtable;
 import java.util.Vector;
 
 import org.bouncycastle.asn1.x500.X500Name;
@@ -13,6 +14,7 @@ import org.bouncycastle.tls.CertificateRequest;
 import org.bouncycastle.tls.ChannelBinding;
 import org.bouncycastle.tls.ClientCertificateType;
 import org.bouncycastle.tls.DefaultTlsServer;
+import org.bouncycastle.tls.ProtocolName;
 import org.bouncycastle.tls.ProtocolVersion;
 import org.bouncycastle.tls.SignatureAlgorithm;
 import org.bouncycastle.tls.TlsCredentialedDecryptor;
@@ -123,11 +125,47 @@ class MockDTLSServer
     {
         super.notifyHandshakeComplete();
 
+        ProtocolName protocolName = context.getSecurityParametersConnection().getApplicationProtocol();
+        if (protocolName != null)
+        {
+            System.out.println("Server ALPN: " + protocolName.getUtf8Decoding());
+        }
+
         byte[] tlsServerEndPoint = context.exportChannelBinding(ChannelBinding.tls_server_end_point);
         System.out.println("Server 'tls-server-end-point': " + hex(tlsServerEndPoint));
 
         byte[] tlsUnique = context.exportChannelBinding(ChannelBinding.tls_unique);
         System.out.println("Server 'tls-unique': " + hex(tlsUnique));
+    }
+
+    public void processClientExtensions(Hashtable clientExtensions) throws IOException
+    {
+        if (context.getSecurityParametersHandshake().getClientRandom() == null)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
+
+        super.processClientExtensions(clientExtensions);
+    }
+
+    public Hashtable getServerExtensions() throws IOException
+    {
+        if (context.getSecurityParametersHandshake().getServerRandom() == null)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
+
+        return super.getServerExtensions();
+    }
+
+    public void getServerExtensionsForConnection(Hashtable serverExtensions) throws IOException
+    {
+        if (context.getSecurityParametersHandshake().getServerRandom() == null)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
+
+        super.getServerExtensionsForConnection(serverExtensions);
     }
 
     protected TlsCredentialedDecryptor getRSAEncryptionCredentials() throws IOException
@@ -149,6 +187,6 @@ class MockDTLSServer
 
     protected ProtocolVersion[] getSupportedVersions()
     {
-        return ProtocolVersion.DTLSv12.downTo(ProtocolVersion.DTLSv10);
+        return ProtocolVersion.DTLSv12.only();
     }
 }

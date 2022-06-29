@@ -62,6 +62,66 @@ public class PGPKeyRingGenerator
     }
 
     /**
+     * Create a new key ring generator without a user-id, but instead with a primary key carrying a direct-key signature.
+     * @param masterKey primary key
+     * @param checksumCalculator checksum calculator
+     * @param hashedPcks hashed signature subpackets
+     * @param unhashedPcks unhashed signature subpackets
+     * @param keySignerBuilder signer builder
+     * @param keyEncryptor key encryptor
+     * @throws PGPException
+     */
+    public PGPKeyRingGenerator(
+            PGPKeyPair masterKey,
+            PGPDigestCalculator checksumCalculator,
+            PGPSignatureSubpacketVector hashedPcks,
+            PGPSignatureSubpacketVector unhashedPcks,
+            PGPContentSignerBuilder keySignerBuilder,
+            PBESecretKeyEncryptor keyEncryptor)
+            throws PGPException
+    {
+        this.masterKey = masterKey;
+        this.keyEncryptor = keyEncryptor;
+        this.checksumCalculator = checksumCalculator;
+        this.keySignerBuilder = keySignerBuilder;
+        this.hashedPcks = hashedPcks;
+        this.unhashedPcks = unhashedPcks;
+
+        PGPSignatureGenerator sigGen;
+
+        try
+        {
+            sigGen = new PGPSignatureGenerator(keySignerBuilder);
+        }
+        catch (Exception e)
+        {
+            throw new PGPException("creating signature generator: " + e, e);
+        }
+
+        // Keyring without user-id needs direct key sig
+        sigGen.init(PGPSignature.DIRECT_KEY, masterKey.getPrivateKey());
+        sigGen.setHashedSubpackets(hashedPcks);
+        sigGen.setUnhashedSubpackets(unhashedPcks);
+
+        PGPSecretKey secretKey = new PGPSecretKey(masterKey.getPrivateKey(), masterKey.getPublicKey(), checksumCalculator, true, keyEncryptor);
+        PGPPublicKey publicKey = secretKey.getPublicKey();
+        try
+        {
+            PGPSignature certification = sigGen.generateCertification(masterKey.getPublicKey());
+
+            publicKey = PGPPublicKey.addCertification(publicKey, certification);
+        }
+        catch (Exception e)
+        {
+            throw new PGPException("exception doing direct-key signature: " + e, e);
+        }
+        secretKey = PGPSecretKey.replacePublicKey(secretKey, publicKey);
+
+        keys.add(secretKey);
+    }
+
+
+    /**
      * Create a new key ring generator based on an original secret key ring. The default hashed/unhashed sub-packets
      * for subkey signatures will be inherited from the first signature on the master key (other than CREATION-TIME
      * which will be ignored).
@@ -109,7 +169,7 @@ public class PGPKeyRingGenerator
      * Add a sub key to the key ring to be generated with default certification and inheriting
      * the hashed/unhashed packets of the master key.
      * 
-     * @param keyPair
+     * @param keyPair the key pair to add.
      * @throws PGPException
      */
     public void addSubKey(
@@ -118,11 +178,28 @@ public class PGPKeyRingGenerator
     {
         addSubKey(keyPair, hashedPcks, unhashedPcks);
     }
-    
+
+    /**
+     * Add a sub key to the key ring to be generated with default certification and inheriting
+     * the hashed/unhashed packets of the master key.  If bindingSignerBldr is not null it will be used to add a Primary Key Binding
+     * signature (type 0x19) into the hashedPcks for the key (required for signing subkeys).
+     *
+     * @param keyPair the key pair to add.
+     * @param bindingSignerBldr provide a signing builder to create the Primary Key signature.
+     * @throws PGPException
+     */
+    public void addSubKey(
+        PGPKeyPair    keyPair,
+        PGPContentSignerBuilder     bindingSignerBldr)
+        throws PGPException
+    {
+        addSubKey(keyPair, hashedPcks, unhashedPcks, bindingSignerBldr);
+    }
+
     /**
      * Add a subkey with specific hashed and unhashed packets associated with it and default
-     * certification. 
-     * 
+     * certification.
+     *
      * @param keyPair public/private key pair.
      * @param hashedPcks hashed packet values to be included in certification.
      * @param unhashedPcks unhashed packets values to be included in certification.
@@ -131,7 +208,28 @@ public class PGPKeyRingGenerator
     public void addSubKey(
         PGPKeyPair                  keyPair,
         PGPSignatureSubpacketVector hashedPcks,
-        PGPSignatureSubpacketVector unhashedPcks) 
+        PGPSignatureSubpacketVector unhashedPcks)
+        throws PGPException
+    {
+        addSubKey(keyPair, hashedPcks, unhashedPcks, null);
+    }
+
+    /**
+     * Add a subkey with specific hashed and unhashed packets associated with it and default
+     * certification. If bindingSignerBldr is not null it will be used to add a Primary Key Binding
+     * signature (type 0x19) into the hashedPcks for the key (required for signing subkeys).
+     * 
+     * @param keyPair public/private key pair.
+     * @param hashedPcks hashed packet values to be included in certification.
+     * @param unhashedPcks unhashed packets values to be included in certification.
+     * @param bindingSignerBldr provide a signing builder to create the Primary Key signature.
+     * @throws PGPException
+     */
+    public void addSubKey(
+        PGPKeyPair                  keyPair,
+        PGPSignatureSubpacketVector hashedPcks,
+        PGPSignatureSubpacketVector unhashedPcks,
+        PGPContentSignerBuilder     bindingSignerBldr)
         throws PGPException
     {
         try
@@ -143,7 +241,24 @@ public class PGPKeyRingGenerator
 
             sGen.init(PGPSignature.SUBKEY_BINDING, masterKey.getPrivateKey());
 
-            sGen.setHashedSubpackets(hashedPcks);
+            if (bindingSignerBldr != null)
+            {
+                // add primary key binding
+                PGPSignatureGenerator  pGen = new PGPSignatureGenerator(bindingSignerBldr);
+
+                pGen.init(PGPSignature.PRIMARYKEY_BINDING, keyPair.getPrivateKey());
+
+                PGPSignatureSubpacketGenerator spGen = new PGPSignatureSubpacketGenerator(hashedPcks);
+
+                spGen.addEmbeddedSignature(false,
+                        pGen.generateCertification(masterKey.getPublicKey(), keyPair.getPublicKey()));
+                sGen.setHashedSubpackets(spGen.generate());
+            }
+            else
+            {
+                sGen.setHashedSubpackets(hashedPcks);
+            }
+
             sGen.setUnhashedSubpackets(unhashedPcks);
 
             List                 subSigs = new ArrayList();

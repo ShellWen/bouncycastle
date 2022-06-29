@@ -24,7 +24,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
@@ -33,7 +32,9 @@ import java.util.logging.Logger;
 
 import javax.net.ssl.SSLEngine;
 
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.x509.KeyPurposeId;
+import org.bouncycastle.asn1.x9.ECNamedCurveTable;
 import org.bouncycastle.jcajce.util.JcaJceHelper;
 import org.bouncycastle.jsse.BCExtendedSSLSession;
 import org.bouncycastle.jsse.BCSNIHostName;
@@ -41,6 +42,9 @@ import org.bouncycastle.jsse.BCX509ExtendedKeyManager;
 import org.bouncycastle.jsse.BCX509Key;
 import org.bouncycastle.jsse.java.security.BCAlgorithmConstraints;
 import org.bouncycastle.tls.KeyExchangeAlgorithm;
+import org.bouncycastle.tls.NamedGroup;
+import org.bouncycastle.tls.ProtocolVersion;
+import org.bouncycastle.tls.TlsUtils;
 
 class ProvX509KeyManager
     extends BCX509ExtendedKeyManager
@@ -69,6 +73,29 @@ class ProvX509KeyManager
     private static final Map<String, PublicKeyFilter> FILTERS_CLIENT = createFiltersClient();
     private static final Map<String, PublicKeyFilter> FILTERS_SERVER = createFiltersServer();
 
+    private static void addECFilter13(Map<String, PublicKeyFilter> filters, int namedGroup13)
+    {
+        if (!NamedGroup.canBeNegotiated(namedGroup13, ProtocolVersion.TLSv13))
+        {
+            throw new IllegalStateException("Invalid named group for TLS 1.3 EC filter");
+        }
+
+        String curveName = NamedGroup.getCurveName(namedGroup13);
+        if (null != curveName)
+        {
+            ASN1ObjectIdentifier standardOID = ECNamedCurveTable.getOID(curveName);
+            if (null != standardOID)
+            {
+                String keyType = JsseUtils.getKeyType13("EC", namedGroup13);
+                PublicKeyFilter filter = new ECPublicKeyFilter13(standardOID);
+                addFilterToMap(filters, keyType, filter);
+                return;
+            }
+        }
+
+        LOG.warning("Failed to register public key filter for EC with " + NamedGroup.getText(namedGroup13));
+    }
+
     private static void addFilter(Map<String, PublicKeyFilter> filters, String keyType)
     {
         String algorithm = keyType;
@@ -84,14 +111,11 @@ class ProvX509KeyManager
     private static void addFilter(Map<String, PublicKeyFilter> filters, int keyUsageBit, String algorithm,
         Class<? extends PublicKey> clazz, String... keyTypes)
     {
-        PublicKeyFilter filter = new PublicKeyFilter(algorithm, clazz, keyUsageBit);
+        PublicKeyFilter filter = new DefaultPublicKeyFilter(algorithm, clazz, keyUsageBit);
 
         for (String keyType : keyTypes)
         {
-            if (null != filters.put(keyType.toUpperCase(Locale.ENGLISH), filter))
-            {
-                throw new IllegalStateException("Duplicate keys in filters");
-            }
+            addFilterToMap(filters, keyType, filter);
         }
     }
 
@@ -119,12 +143,28 @@ class ProvX509KeyManager
         addFilter(filters, keyUsageBit, algorithm, clazz, getKeyTypesLegacyServer(keyExchangeAlgorithms));
     }
 
+    private static void addFilterToMap(Map<String, PublicKeyFilter> filters, String keyType, PublicKeyFilter filter)
+    {
+        if (null != filters.put(keyType, filter))
+        {
+            throw new IllegalStateException("Duplicate keys in filters");
+        }
+    }
+
     private static Map<String, PublicKeyFilter> createFiltersClient()
     {
         Map<String, PublicKeyFilter> filters = new HashMap<String, PublicKeyFilter>();
 
         addFilter(filters, "Ed25519");
         addFilter(filters, "Ed448");
+
+        addECFilter13(filters, NamedGroup.brainpoolP256r1tls13);
+        addECFilter13(filters, NamedGroup.brainpoolP384r1tls13);
+        addECFilter13(filters, NamedGroup.brainpoolP512r1tls13);
+
+        addECFilter13(filters, NamedGroup.secp256r1);
+        addECFilter13(filters, NamedGroup.secp384r1);
+        addECFilter13(filters, NamedGroup.secp521r1);
 
         // TODO Perhaps check the public key OID explicitly for these
         addFilter(filters, "RSA");
@@ -142,6 +182,14 @@ class ProvX509KeyManager
 
         addFilter(filters, "Ed25519");
         addFilter(filters, "Ed448");
+
+        addECFilter13(filters, NamedGroup.brainpoolP256r1tls13);
+        addECFilter13(filters, NamedGroup.brainpoolP384r1tls13);
+        addECFilter13(filters, NamedGroup.brainpoolP512r1tls13);
+
+        addECFilter13(filters, NamedGroup.secp256r1);
+        addECFilter13(filters, NamedGroup.secp384r1);
+        addECFilter13(filters, NamedGroup.secp521r1);
 
         // TODO Perhaps check the public key OID explicitly for these
         addFilter(filters, "RSA");
@@ -202,9 +250,9 @@ class ProvX509KeyManager
     }
 
     @Override
-    public BCX509Key chooseEngineServerKeyBC(String keyType, Principal[] issuers, SSLEngine engine)
+    public BCX509Key chooseEngineServerKeyBC(String[] keyTypes, Principal[] issuers, SSLEngine engine)
     {
-        return chooseKeyBC(getKeyTypes(keyType), issuers, TransportData.from(engine), true);
+        return chooseKeyBC(getKeyTypes(keyTypes), issuers, TransportData.from(engine), true);
     }
 
     public String chooseServerAlias(String keyType, Principal[] issuers, Socket socket)
@@ -213,9 +261,9 @@ class ProvX509KeyManager
     }
 
     @Override
-    public BCX509Key chooseServerKeyBC(String keyType, Principal[] issuers, Socket socket)
+    public BCX509Key chooseServerKeyBC(String[] keyTypes, Principal[] issuers, Socket socket)
     {
-        return chooseKeyBC(getKeyTypes(keyType), issuers, TransportData.from(socket), true);
+        return chooseKeyBC(getKeyTypes(keyTypes), issuers, TransportData.from(socket), true);
     }
 
     public X509Certificate[] getCertificateChain(String alias)
@@ -229,8 +277,19 @@ class ProvX509KeyManager
         return getAliases(getKeyTypes(keyType), issuers, null, false);
     }
 
+    public PrivateKey getPrivateKey(String alias)
+    {
+        KeyStore.PrivateKeyEntry entry = getPrivateKeyEntry(alias);
+        return null == entry ? null : entry.getPrivateKey();
+    }
+
+    public String[] getServerAliases(String keyType, Principal[] issuers)
+    {
+        return getAliases(getKeyTypes(keyType), issuers, null, true);
+    }
+
     @Override
-    public BCX509Key getKeyBC(String alias)
+    protected BCX509Key getKeyBC(String keyType, String alias)
     {
         KeyStore.PrivateKeyEntry entry = getPrivateKeyEntry(alias);
         if (null == entry)
@@ -245,32 +304,12 @@ class ProvX509KeyManager
         }
 
         X509Certificate[] certificateChain = JsseUtils.getX509CertificateChain(entry.getCertificateChain());
-        if (certificateChain == null || certificateChain.length < 1)
+        if (TlsUtils.isNullOrEmpty(certificateChain))
         {
             return null;
         }
 
-        return new ProvX509Key(privateKey, certificateChain);
-    }
-
-    public PrivateKey getPrivateKey(String alias)
-    {
-        KeyStore.PrivateKeyEntry entry = getPrivateKeyEntry(alias);
-        return null == entry ? null : entry.getPrivateKey();
-    }
-
-    public String[] getServerAliases(String keyType, Principal[] issuers)
-    {
-        return getAliases(getKeyTypes(keyType), issuers, null, true);
-    }
-
-    static KeyPurposeId getRequiredExtendedKeyUsage(boolean forServer)
-    {
-        return !provKeyManagerCheckEKU
-            ?   null
-            :   forServer
-            ?   KeyPurposeId.id_kp_serverAuth
-            :   KeyPurposeId.id_kp_clientAuth;
+        return new ProvX509Key(keyType, privateKey, certificateChain);
     }
 
     private String chooseAlias(List<String> keyTypes, Principal[] issuers, TransportData transportData,
@@ -278,10 +317,14 @@ class ProvX509KeyManager
     {
         Match bestMatch = getBestMatch(keyTypes, issuers, transportData, forServer);
 
-        if (Match.NOTHING != bestMatch)
+        if (bestMatch.compareTo(Match.NOTHING) < 0)
         {
+            String keyType = keyTypes.get(bestMatch.keyTypeIndex);
             String alias = getAlias(bestMatch, getNextVersionSuffix());
-            LOG.fine("Found matching key, returning alias: " + alias);
+            if (LOG.isLoggable(Level.FINE))
+            {
+                LOG.fine("Found matching key of type: " + keyType + ", returning alias: " + alias);
+            }
             return alias;
         }
 
@@ -294,20 +337,28 @@ class ProvX509KeyManager
     {
         Match bestMatch = getBestMatch(keyTypes, issuers, transportData, forServer);
 
-        if (Match.NOTHING != bestMatch)
+        if (bestMatch.compareTo(Match.NOTHING) < 0)
         {
             try
             {
-                BCX509Key keyBC = createKeyBC(bestMatch.builderIndex, bestMatch.localAlias, bestMatch.cachedKeyStore,
-                    bestMatch.cachedCertificateChain);
+                String keyType = keyTypes.get(bestMatch.keyTypeIndex);
+
+                BCX509Key keyBC = createKeyBC(keyType, bestMatch.builderIndex, bestMatch.localAlias,
+                    bestMatch.cachedKeyStore, bestMatch.cachedCertificateChain);
                 if (null != keyBC)
                 {
-                    LOG.fine("Found matching key, from alias: " + bestMatch.builderIndex + "." + bestMatch.localAlias);
+                    if (LOG.isLoggable(Level.FINE))
+                    {
+                        LOG.fine("Found matching key of type: " + keyType + ", from alias: " + bestMatch.builderIndex
+                            + "." + bestMatch.localAlias);
+                    }
+
                     return keyBC;
                 }
             }
             catch (Exception e)
             {
+                LOG.log(Level.FINER, "Failed to load private key", e);
             }
         }
 
@@ -315,23 +366,17 @@ class ProvX509KeyManager
         return null;
     }
 
-    private BCX509Key createKeyBC(int builderIndex, String alias, KeyStore keyStore, X509Certificate[] certificateChain)
+    private BCX509Key createKeyBC(String keyType, int builderIndex, String localAlias, KeyStore keyStore,
+        X509Certificate[] certificateChain)
         throws KeyStoreException, NoSuchAlgorithmException, UnrecoverableKeyException
     {
         KeyStore.Builder builder = builders.get(builderIndex);
-        ProtectionParameter protectionParameter = builder.getProtectionParameter(alias);
+        ProtectionParameter protectionParameter = builder.getProtectionParameter(localAlias);
 
-        if (protectionParameter instanceof KeyStore.PasswordProtection)
+        Key key = KeyStoreUtil.getKey(keyStore, localAlias, protectionParameter);
+        if (key instanceof PrivateKey)
         {
-            KeyStore.PasswordProtection passwordProtection = (KeyStore.PasswordProtection)protectionParameter;
-            if (null == passwordProtection.getProtectionAlgorithm())
-            {
-                Key key = keyStore.getKey(alias, passwordProtection.getPassword());
-                if (key instanceof PrivateKey)
-                {
-                    return new ProvX509Key((PrivateKey) key, certificateChain);
-                }
-            }
+            return new ProvX509Key(keyType, (PrivateKey)key, certificateChain);
         }
 
         return null;
@@ -342,130 +387,109 @@ class ProvX509KeyManager
     {
         if (!builders.isEmpty() && !keyTypes.isEmpty())
         {
+            int keyTypeLimit = keyTypes.size();
             Set<Principal> uniqueIssuers = getUniquePrincipals(issuers);
             BCAlgorithmConstraints algorithmConstraints = TransportData.getAlgorithmConstraints(transportData, true);
             Date atDate = new Date();
             String requestedHostName = getRequestedHostName(transportData, forServer);
+            List<Match> matches = null;
 
-            List<Match> allMatches = null;
-
-            for (int i = 0, count = builders.size(); i < count; ++i)
+            for (int builderIndex = 0, count = builders.size(); builderIndex < count; ++builderIndex)
             {
                 try
                 {
-                    List<Match> matches = getAliasesFromBuilder(i, keyTypes, uniqueIssuers, algorithmConstraints,
-                        forServer, atDate, requestedHostName);
+                    KeyStore.Builder builder = builders.get(builderIndex);
+                    KeyStore keyStore = builder.getKeyStore();
+                    if (null == keyStore)
+                    {
+                        continue;
+                    }
 
-                    allMatches = addToAllMatches(allMatches, matches);
+                    for (Enumeration<String> en = keyStore.aliases(); en.hasMoreElements();)
+                    {
+                        String localAlias = en.nextElement();
+
+                        Match match = getPotentialMatch(builderIndex, builder, keyStore, localAlias, keyTypes,
+                            keyTypeLimit, uniqueIssuers, algorithmConstraints, forServer, atDate, requestedHostName);
+
+                        if (match.compareTo(Match.NOTHING) < 0)
+                        {
+                            matches = addToMatches(matches, match);
+                        }
+                    }
                 }
-                catch (Exception e)
+                catch (KeyStoreException e)
                 {
+                    LOG.log(Level.WARNING, "Failed to fully process KeyStore.Builder at index " + builderIndex, e);
                 }
             }
 
-            if (null != allMatches && !allMatches.isEmpty())
+            if (null != matches && !matches.isEmpty())
             {
                 // NOTE: We are relying on this being a stable sort
-                Collections.sort(allMatches);
+                Collections.sort(matches);
 
-                return getAliases(allMatches, getNextVersionSuffix());
+                return getAliases(matches, getNextVersionSuffix());
             }
         }
 
         return null;
     }
 
-    private List<Match> getAliasesFromBuilder(int builderIndex, List<String> keyTypes, Set<Principal> uniqueIssuers,
-        BCAlgorithmConstraints algorithmConstraints, boolean forServer, Date atDate, String requestedHostName)
-        throws Exception
-    {
-        KeyStore.Builder builder = builders.get(builderIndex);
-        KeyStore keyStore = builder.getKeyStore();
-
-        List<Match> matches = null;
-
-        for (Enumeration<String> en = keyStore.aliases(); en.hasMoreElements();)
-        {
-            String localAlias = en.nextElement();
-
-            Match match = getPotentialMatch(builderIndex, builder, keyStore, localAlias, Match.Quality.NONE, keyTypes,
-                uniqueIssuers, algorithmConstraints, forServer, atDate, requestedHostName);
-
-            if (null != match)
-            {
-                matches = addToMatches(matches, match);
-            }
-        }
-
-        return matches;
-    }
-
     private Match getBestMatch(List<String> keyTypes, Principal[] issuers, TransportData transportData,
         boolean forServer)
     {
-        Match bestMatch = Match.NOTHING;
+        Match bestMatchSoFar = Match.NOTHING;
 
         if (!builders.isEmpty() && !keyTypes.isEmpty())
         {
+            int keyTypeLimit = keyTypes.size();
             Set<Principal> uniqueIssuers = getUniquePrincipals(issuers);
             BCAlgorithmConstraints algorithmConstraints = TransportData.getAlgorithmConstraints(transportData, true);
             Date atDate = new Date();
             String requestedHostName = getRequestedHostName(transportData, forServer);
 
-            for (int i = 0, count = builders.size(); i < count; ++i)
+            for (int builderIndex = 0, count = builders.size(); builderIndex < count; ++builderIndex)
             {
                 try
                 {
-                    Match match = getBestMatchFromBuilder(i, keyTypes, uniqueIssuers, algorithmConstraints, forServer,
-                        atDate, requestedHostName);
-
-                    if (match.compareTo(bestMatch) < 0)
+                    KeyStore.Builder builder = builders.get(builderIndex);
+                    KeyStore keyStore = builder.getKeyStore();
+                    if (null == keyStore)
                     {
-                        bestMatch = match;
+                        continue;
+                    }
 
-                        if (Match.Quality.OK == bestMatch.quality)
+                    for (Enumeration<String> en = keyStore.aliases(); en.hasMoreElements();)
+                    {
+                        String localAlias = en.nextElement();
+
+                        Match match = getPotentialMatch(builderIndex, builder, keyStore, localAlias, keyTypes,
+                            keyTypeLimit, uniqueIssuers, algorithmConstraints, forServer, atDate, requestedHostName);
+
+                        if (match.compareTo(bestMatchSoFar) < 0)
                         {
-                            break;
+                            bestMatchSoFar = match;
+
+                            if (bestMatchSoFar.isIdeal())
+                            {
+                                return bestMatchSoFar;
+                            }
+                            if (bestMatchSoFar.isValid())
+                            {
+                                keyTypeLimit = Math.min(keyTypeLimit, bestMatchSoFar.keyTypeIndex + 1);
+                            }
                         }
                     }
                 }
-                catch (Exception e)
+                catch (KeyStoreException e)
                 {
+                    LOG.log(Level.WARNING, "Failed to fully process KeyStore.Builder at index " + builderIndex, e);
                 }
             }
         }
 
-        return bestMatch;
-    }
-
-    private Match getBestMatchFromBuilder(int builderIndex, List<String> keyTypes, Set<Principal> uniqueIssuers,
-        BCAlgorithmConstraints algorithmConstraints, boolean forServer, Date atDate, String requestedHostName)
-        throws Exception
-    {
-        KeyStore.Builder builder = builders.get(builderIndex);
-        KeyStore keyStore = builder.getKeyStore();
-
-        Match bestMatch = Match.NOTHING;
-
-        for (Enumeration<String> en = keyStore.aliases(); en.hasMoreElements();)
-        {
-            String localAlias = en.nextElement();
-
-            Match match = getPotentialMatch(builderIndex, builder, keyStore, localAlias, bestMatch.quality, keyTypes,
-                uniqueIssuers, algorithmConstraints, forServer, atDate, requestedHostName);
-
-            if (null != match)
-            {
-                bestMatch = match;
-
-                if (Match.Quality.OK == bestMatch.quality)
-                {
-                    break;
-                }
-            }
-        }
-
-        return bestMatch;
+        return bestMatchSoFar;
     }
 
     private String getNextVersionSuffix()
@@ -474,24 +498,28 @@ class ProvX509KeyManager
     }
 
     private Match getPotentialMatch(int builderIndex, KeyStore.Builder builder, KeyStore keyStore, String localAlias,
-        Match.Quality qualityLimit, List<String> keyTypes, Set<Principal> uniqueIssuers,
+        List<String> keyTypes, int keyTypeLimit, Set<Principal> uniqueIssuers,
         BCAlgorithmConstraints algorithmConstraints, boolean forServer, Date atDate, String requestedHostName)
-        throws Exception
+        throws KeyStoreException
     {
         if (keyStore.isKeyEntry(localAlias))
         {
             X509Certificate[] chain = JsseUtils.getX509CertificateChain(keyStore.getCertificateChain(localAlias));
-            if (isSuitableChain(chain, keyTypes, uniqueIssuers, algorithmConstraints, forServer))
+
+            int keyTypeIndex = getPotentialKeyType(keyTypes, keyTypeLimit, uniqueIssuers, algorithmConstraints,
+                forServer, chain);
+            if (keyTypeIndex >= 0)
             {
-                Match.Quality quality = getCertificateQuality(chain[0], atDate, requestedHostName);
-                if (quality.compareTo(qualityLimit) < 0)
+                MatchQuality quality = getKeyTypeQuality(isInFipsMode, helper, keyTypes, algorithmConstraints,
+                    forServer, atDate, requestedHostName, chain, keyTypeIndex);
+                if (MatchQuality.NONE != quality)
                 {
-                    return new Match(quality, builderIndex, localAlias, keyStore, chain);
+                    return new Match(quality, keyTypeIndex, builderIndex, localAlias, keyStore, chain);
                 }
             }
         }
 
-        return null;
+        return Match.NOTHING;
     }
 
     private KeyStore.PrivateKeyEntry getPrivateKeyEntry(String alias)
@@ -519,33 +547,6 @@ class ProvX509KeyManager
         return result;
     }
 
-    private boolean isSuitableChain(X509Certificate[] chain, List<String> keyTypes, Set<Principal> uniqueIssuers,
-        BCAlgorithmConstraints algorithmConstraints, boolean forServer)
-    {
-        if (null == chain || chain.length < 1
-            || !isSuitableChainForIssuers(chain, uniqueIssuers)
-            || !isSuitableEECert(chain[0], keyTypes, algorithmConstraints, forServer))
-        {
-            return false;
-        }
-
-        try
-        {
-            Set<X509Certificate> trustedCerts = Collections.emptySet();
-            KeyPurposeId ekuOID = getRequiredExtendedKeyUsage(forServer);
-            int kuBit = -1; // i.e. no checks; we handle them in isSuitableEECert
-
-            ProvAlgorithmChecker.checkChain(isInFipsMode, helper, algorithmConstraints, trustedCerts, chain, ekuOID,
-                kuBit);
-        }
-        catch (CertPathValidatorException e)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
     private KeyStore.PrivateKeyEntry loadPrivateKeyEntry(String alias)
     {
         try
@@ -555,7 +556,7 @@ class ProvX509KeyManager
             if (builderIndexEnd > builderIndexStart)
             {
                 int localAliasStart = builderIndexEnd + 1;
-                int localAliasEnd = alias.indexOf('.', localAliasStart);
+                int localAliasEnd = alias.lastIndexOf('.');
                 if (localAliasEnd > localAliasStart)
                 {
                     int builderIndex = Integer.parseInt(alias.substring(builderIndexStart, builderIndexEnd));
@@ -565,12 +566,15 @@ class ProvX509KeyManager
 
                         String localAlias = alias.substring(localAliasStart, localAliasEnd);
                         KeyStore keyStore = builder.getKeyStore();
-                        ProtectionParameter protectionParameter = builder.getProtectionParameter(localAlias);
-
-                        KeyStore.Entry entry = keyStore.getEntry(localAlias, protectionParameter);
-                        if (entry instanceof KeyStore.PrivateKeyEntry)
+                        if (null != keyStore)
                         {
-                            return (KeyStore.PrivateKeyEntry)entry;
+                            ProtectionParameter protectionParameter = builder.getProtectionParameter(localAlias);
+
+                            KeyStore.Entry entry = keyStore.getEntry(localAlias, protectionParameter);
+                            if (entry instanceof KeyStore.PrivateKeyEntry)
+                            {
+                                return (KeyStore.PrivateKeyEntry)entry;
+                            }
                         }
                     }
                 }
@@ -583,20 +587,112 @@ class ProvX509KeyManager
         return null;
     }
 
-    private static List<Match> addToAllMatches(List<Match> allMatches, List<Match> matches)
+    static MatchQuality getKeyTypeQuality(boolean isInFipsMode, JcaJceHelper helper, List<String> keyTypes,
+        BCAlgorithmConstraints algorithmConstraints, boolean forServer, Date atDate, String requestedHostName,
+        X509Certificate[] chain, int keyTypeIndex)
     {
-        if (null != matches && !matches.isEmpty())
+        String keyType = keyTypes.get(keyTypeIndex);
+
+        LOG.finer("EE cert potentially usable for key type: " + keyType);
+
+        if (!isSuitableChain(isInFipsMode, helper, chain, algorithmConstraints, forServer))
         {
-            if (null == allMatches)
+            LOG.finer("Unsuitable chain for key type: " + keyType);
+            return MatchQuality.NONE;
+        }
+
+        return getCertificateQuality(chain[0], atDate, requestedHostName);
+    }
+
+    static List<String> getKeyTypes(String... keyTypes)
+    {
+        if (null != keyTypes && keyTypes.length > 0)
+        {
+            ArrayList<String> result = new ArrayList<String>(keyTypes.length);
+            for (String keyType : keyTypes)
             {
-                allMatches = matches;
+                if (null == keyType)
+                {
+                    throw new IllegalArgumentException("Key types cannot be null");
+                }
+                if (!result.contains(keyType))
+                {
+                    result.add(keyType);
+                }
             }
-            else
+            return Collections.unmodifiableList(result);
+        }
+        return Collections.emptyList();
+    }
+
+    static int getPotentialKeyType(List<String> keyTypes, int keyTypeLimit, Set<Principal> uniqueIssuers,
+        BCAlgorithmConstraints algorithmConstraints, boolean forServer, X509Certificate[] chain)
+    {
+        if (!isSuitableChainForIssuers(chain, uniqueIssuers))
+        {
+            return -1;
+        }
+
+        return getSuitableKeyTypeForEECert(chain[0], keyTypes, keyTypeLimit, algorithmConstraints, forServer);
+    }
+
+    static String getRequestedHostName(TransportData transportData, boolean forServer)
+    {
+        if (null != transportData && forServer)
+        {
+            BCExtendedSSLSession sslSession = transportData.getHandshakeSession();
+            if (null != sslSession)
             {
-                allMatches.addAll(matches);
+                BCSNIHostName sniHostName = JsseUtils.getSNIHostName(sslSession.getRequestedServerNames());
+                if (null != sniHostName)
+                {
+                    return sniHostName.getAsciiName();
+                }
             }
         }
-        return allMatches;
+        return null;
+    }
+
+    static Set<Principal> getUniquePrincipals(Principal[] principals)
+    {
+        if (null == principals)
+        {
+            return null;
+        }
+        if (principals.length > 0)
+        {
+            Set<Principal> result = new HashSet<Principal>();
+            for (int i = 0; i < principals.length; ++i)
+            {
+                Principal principal = principals[i];
+                if (null != principal)
+                {
+                    result.add(principal);
+                }
+            }
+            if (!result.isEmpty())
+            {
+                return Collections.unmodifiableSet(result);
+            }
+        }
+        return Collections.emptySet();
+    }
+
+    static boolean isSuitableKeyType(boolean forServer, String keyType, X509Certificate eeCert,
+        TransportData transportData)
+    {
+        Map<String, PublicKeyFilter> filters = forServer ? FILTERS_SERVER : FILTERS_CLIENT;
+        PublicKeyFilter filter = filters.get(keyType);
+        if (null == filter)
+        {
+            return false;
+        }
+
+        PublicKey publicKey = eeCert.getPublicKey();
+        boolean[] keyUsage = eeCert.getKeyUsage();
+        BCAlgorithmConstraints algorithmConstraints = TransportData.getAlgorithmConstraints(transportData, true);
+
+        return filter.accepts(publicKey, keyUsage, algorithmConstraints);
     }
 
     private static List<Match> addToMatches(List<Match> matches, Match match)
@@ -626,7 +722,7 @@ class ProvX509KeyManager
         return result;
     }
 
-    private static Match.Quality getCertificateQuality(X509Certificate certificate, Date atDate, String requestedHostName)
+    private static MatchQuality getCertificateQuality(X509Certificate certificate, Date atDate, String requestedHostName)
     {
         try
         {
@@ -634,7 +730,7 @@ class ProvX509KeyManager
         }
         catch (CertificateException e)
         {
-            return Match.Quality.EXPIRED;
+            return MatchQuality.EXPIRED;
         }
 
         if (null != requestedHostName)
@@ -649,7 +745,7 @@ class ProvX509KeyManager
             }
             catch (CertificateException e)
             {
-                return Match.Quality.MISMATCH_SNI;
+                return MatchQuality.MISMATCH_SNI;
             }
         }
 
@@ -662,80 +758,73 @@ class ProvX509KeyManager
             if (ProvAlgorithmChecker.supportsKeyUsage(keyUsage, ProvAlgorithmChecker.KU_DIGITAL_SIGNATURE) &&
                 ProvAlgorithmChecker.supportsKeyUsage(keyUsage, ProvAlgorithmChecker.KU_KEY_ENCIPHERMENT))
             {
-                return Match.Quality.RSA_MULTI_USE; 
+                return MatchQuality.RSA_MULTI_USE; 
             }
         }
 
-        return Match.Quality.OK;
+        return MatchQuality.OK;
     }
 
-    private static List<String> getKeyTypes(String... keyTypes)
+    private static KeyPurposeId getRequiredExtendedKeyUsage(boolean forServer)
     {
-        if (null != keyTypes && keyTypes.length > 0)
-        {
-            ArrayList<String> result = new ArrayList<String>(keyTypes.length);
-            for (String keyType : keyTypes)
-            {
-                if (null != keyType)
-                {
-                    result.add(keyType.toUpperCase(Locale.ENGLISH));
-                }
-            }
-            if (!result.isEmpty())
-            {
-                return Collections.unmodifiableList(result);
-            }
-        }
-        return Collections.emptyList();
+        return !provKeyManagerCheckEKU
+            ?   null
+            :   forServer
+            ?   KeyPurposeId.id_kp_serverAuth
+            :   KeyPurposeId.id_kp_clientAuth;
     }
 
-    private static String getRequestedHostName(TransportData transportData, boolean forServer)
+    private static int getSuitableKeyTypeForEECert(X509Certificate eeCert, List<String> keyTypes, int keyTypeLimit,
+        BCAlgorithmConstraints algorithmConstraints, boolean forServer)
     {
-        if (null != transportData && forServer)
+        Map<String, PublicKeyFilter> filters = forServer ? FILTERS_SERVER : FILTERS_CLIENT;
+
+        PublicKey publicKey = eeCert.getPublicKey();
+        boolean[] keyUsage = eeCert.getKeyUsage();
+
+        for (int keyTypeIndex = 0; keyTypeIndex < keyTypeLimit; ++keyTypeIndex)
         {
-            BCExtendedSSLSession sslSession = transportData.getHandshakeSession();
-            if (null != sslSession)
+            String keyType = keyTypes.get(keyTypeIndex);
+            PublicKeyFilter filter = filters.get(keyType);
+            if (null != filter && filter.accepts(publicKey, keyUsage, algorithmConstraints))
             {
-                BCSNIHostName sniHostName = JsseUtils.getSNIHostName(sslSession.getRequestedServerNames());
-                if (null != sniHostName)
-                {
-                    return sniHostName.getAsciiName();
-                }
+                return keyTypeIndex;
             }
         }
-        return null;
+
+        return -1;
     }
 
-    private static Set<Principal> getUniquePrincipals(Principal[] principals)
+    private static boolean isSuitableChain(boolean isInFipsMode, JcaJceHelper helper, X509Certificate[] chain,
+        BCAlgorithmConstraints algorithmConstraints, boolean forServer)
     {
-        if (null == principals)
+        try
         {
-            return null;
+            Set<X509Certificate> trustedCerts = Collections.emptySet();
+            KeyPurposeId ekuOID = getRequiredExtendedKeyUsage(forServer);
+            int kuBit = -1; // i.e. no checks; we handle them in isSuitableEECert
+
+            ProvAlgorithmChecker.checkChain(isInFipsMode, helper, algorithmConstraints, trustedCerts, chain, ekuOID,
+                kuBit);
+
+            return true;
         }
-        if (principals.length > 0)
+        catch (CertPathValidatorException e)
         {
-            Set<Principal> result = new HashSet<Principal>();
-            for (int i = 0; i < principals.length; ++i)
-            {
-                Principal principal = principals[i];
-                if (null != principal)
-                {
-                    result.add(principal);
-                }
-            }
-            if (!result.isEmpty())
-            {
-                return Collections.unmodifiableSet(result);
-            }
+            LOG.log(Level.FINEST, "Certificate chain check failed", e);
+            return false;
         }
-        return Collections.emptySet();
     }
 
     private static boolean isSuitableChainForIssuers(X509Certificate[] chain, Set<Principal> uniqueIssuers)
     {
-        // NOTE: Empty issuers means same as absent issuers, per SunJSSE
+        if (TlsUtils.isNullOrEmpty(chain))
+        {
+            return false;
+        }
         if (null == uniqueIssuers || uniqueIssuers.isEmpty())
         {
+            // NOTE: Empty issuers means same as absent issuers, per SunJSSE
             return true;
         }
         int pos = chain.length;
@@ -751,80 +840,91 @@ class ProvX509KeyManager
             && uniqueIssuers.contains(eeCert.getSubjectX500Principal());
     }
 
-    private static boolean isSuitableEECert(X509Certificate eeCert, List<String> keyTypes,
-        BCAlgorithmConstraints algorithmConstraints, boolean forServer)
+    // NOTE: We rely on these being in preference order.
+    static enum MatchQuality
     {
-        Map<String, PublicKeyFilter> filters = forServer ? FILTERS_SERVER : FILTERS_CLIENT;
-
-        PublicKey publicKey = eeCert.getPublicKey();
-        boolean[] keyUsage = eeCert.getKeyUsage();
-
-        for (String keyType : keyTypes)
-        {
-            PublicKeyFilter filter = filters.get(keyType);
-            if (null != filter && filter.accepts(publicKey, keyUsage, algorithmConstraints))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        OK,
+        RSA_MULTI_USE,
+        MISMATCH_SNI,
+        EXPIRED,
+        // TODO[jsse] Consider allowing certificates with invalid ExtendedKeyUsage and/or KeyUsage (as SunJSSE does)
+//        MISMATCH_EKU,
+//        MISMATCH_KU,
+        NONE
     }
 
     private static final class Match
         implements Comparable<Match>
     {
-        // NOTE: We rely on these being in preference order.
-        static enum Quality
-        {
-            OK,
-            RSA_MULTI_USE,
-            MISMATCH_SNI,
-            EXPIRED,
-            // TODO[jsse] Consider allowing certificates with invalid ExtendedKeyUsage and/or KeyUsage (as SunJSSE does)
-//            MISMATCH_EKU,
-//            MISMATCH_KU,
-            NONE
-        }
 
-        static final Match NOTHING = new Match(Quality.NONE, -1, null, null, null);
+        static final MatchQuality INVALID = MatchQuality.MISMATCH_SNI;
+        static final Match NOTHING = new Match(MatchQuality.NONE, Integer.MAX_VALUE, -1, null, null, null);
 
-        final Quality quality;
+        final MatchQuality quality;
+        final int keyTypeIndex;
         final int builderIndex;
         final String localAlias;
         final KeyStore cachedKeyStore;
         final X509Certificate[] cachedCertificateChain;
 
-        Match(Quality quality, int builderIndex, String localAlias, KeyStore cachedKeyStore,
+        Match(MatchQuality quality, int keyTypeIndex, int builderIndex, String localAlias, KeyStore cachedKeyStore,
             X509Certificate[] cachedCertificateChain)
         {
             this.quality = quality;
+            this.keyTypeIndex = keyTypeIndex;
             this.builderIndex = builderIndex;
             this.localAlias = localAlias;
             this.cachedKeyStore = cachedKeyStore;
             this.cachedCertificateChain = cachedCertificateChain;
         }
 
-        public int compareTo(Match other)
+        public int compareTo(Match that)
         {
-            return this.quality.compareTo(other.quality);
+            boolean thisValid = this.isValid(), thatValid = that.isValid();
+            if (thisValid != thatValid)
+            {
+                return thisValid ? -1 : 1;
+            }
+
+            if (this.keyTypeIndex != that.keyTypeIndex)
+            {
+                return this.keyTypeIndex < that.keyTypeIndex ? -1 : 1;
+            }
+
+            return this.quality.compareTo(that.quality);
+        }
+
+        boolean isIdeal()
+        {
+            return MatchQuality.OK == quality && 0 == keyTypeIndex;
+        }
+
+        boolean isValid()
+        {
+            return quality.compareTo(INVALID) < 0;
         }
     }
 
-    private static final class PublicKeyFilter
+    static interface PublicKeyFilter
+    {
+        boolean accepts(PublicKey publicKey, boolean[] keyUsage, BCAlgorithmConstraints algorithmConstraints);
+    }
+
+    private static final class DefaultPublicKeyFilter
+        implements PublicKeyFilter
     {
         final String algorithm;
         final Class<? extends PublicKey> clazz;
         final int keyUsageBit;
 
-        PublicKeyFilter(String algorithm, Class<? extends PublicKey> clazz, int keyUsageBit)
+        DefaultPublicKeyFilter(String algorithm, Class<? extends PublicKey> clazz, int keyUsageBit)
         {
             this.algorithm = algorithm;
             this.clazz = clazz;
             this.keyUsageBit = keyUsageBit;
         }
 
-        boolean accepts(PublicKey publicKey, boolean[] keyUsage, BCAlgorithmConstraints algorithmConstraints)
+        public boolean accepts(PublicKey publicKey, boolean[] keyUsage, BCAlgorithmConstraints algorithmConstraints)
         {
             return appliesTo(publicKey)
                 && ProvAlgorithmChecker.permitsKeyUsage(publicKey, keyUsage, keyUsageBit, algorithmConstraints);
@@ -834,6 +934,38 @@ class ProvX509KeyManager
         {
             return (null != algorithm && algorithm.equalsIgnoreCase(JsseUtils.getPublicKeyAlgorithm(publicKey)))
                 || (null != clazz && clazz.isInstance(publicKey));
+        }
+    }
+
+    private static final class ECPublicKeyFilter13
+        implements PublicKeyFilter
+    {
+        final ASN1ObjectIdentifier standardOID;
+
+        ECPublicKeyFilter13(ASN1ObjectIdentifier standardOID)
+        {
+            this.standardOID = standardOID;
+        }
+
+        public boolean accepts(PublicKey publicKey, boolean[] keyUsage, BCAlgorithmConstraints algorithmConstraints)
+        {
+            return appliesTo(publicKey)
+                && ProvAlgorithmChecker.permitsKeyUsage(publicKey, keyUsage, ProvAlgorithmChecker.KU_DIGITAL_SIGNATURE,
+                    algorithmConstraints);
+        }
+
+        private boolean appliesTo(PublicKey publicKey)
+        {
+            if ("EC".equalsIgnoreCase(JsseUtils.getPublicKeyAlgorithm(publicKey))
+                || ECPublicKey.class.isInstance(publicKey))
+            {
+                ASN1ObjectIdentifier oid = JsseUtils.getNamedCurveOID(publicKey);
+                if (standardOID.equals(oid))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

@@ -1,23 +1,13 @@
 package org.bouncycastle.jsse.provider;
 
-import java.math.BigInteger;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
 import java.security.Principal;
-import java.security.PublicKey;
-import java.security.SignatureException;
 import java.security.cert.Certificate;
-import java.security.cert.CertificateEncodingException;
-import java.security.cert.CertificateException;
-import java.security.cert.CertificateExpiredException;
-import java.security.cert.CertificateNotYetValidException;
-import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.net.ssl.SSLPeerUnverifiedException;
 import javax.net.ssl.SSLPermission;
@@ -39,26 +29,25 @@ abstract class ProvSSLSessionBase
 {
     protected final Map<String, Object> valueMap = Collections.synchronizedMap(new HashMap<String, Object>());
 
-    protected ProvSSLSessionContext sslSessionContext;
+    protected final AtomicReference<ProvSSLSessionContext> sslSessionContext;
     protected final boolean isFips;
     protected final JcaTlsCrypto crypto;
     protected final String peerHost;
     protected final int peerPort;
     protected final long creationTime;
     protected final SSLSession exportSSLSession;
-
-    protected long lastAccessedTime;
+    protected final AtomicLong lastAccessedTime;
 
     ProvSSLSessionBase(ProvSSLSessionContext sslSessionContext, String peerHost, int peerPort)
     {
-        this.sslSessionContext = sslSessionContext;
+        this.sslSessionContext = new AtomicReference<ProvSSLSessionContext>(sslSessionContext);
         this.isFips = (null == sslSessionContext) ? false : sslSessionContext.getSSLContext().isFips();
         this.crypto = (null == sslSessionContext) ? null : sslSessionContext.getCrypto();
         this.peerHost = peerHost;
         this.peerPort = peerPort;
         this.creationTime = System.currentTimeMillis();
         this.exportSSLSession = SSLSessionUtil.exportSSLSession(this);
-        this.lastAccessedTime = creationTime;
+        this.lastAccessedTime = new AtomicLong(creationTime);
     }
 
     protected abstract int getCipherSuiteTLS();
@@ -75,14 +64,20 @@ abstract class ProvSSLSessionBase
 
     protected abstract ProtocolVersion getProtocolTLS();
 
+    protected abstract void invalidateTLS();
+
     SSLSession getExportSSLSession()
     {
         return exportSSLSession;
     }
 
-    synchronized void accessedAt(long accessTime)
+    void accessedAt(long accessTime)
     {
-        this.lastAccessedTime = Math.max(lastAccessedTime, accessTime);
+        long current = lastAccessedTime.get();
+        if (accessTime > current)
+        {
+            lastAccessedTime.compareAndSet(current, accessTime);
+        }
     }
 
     @Override
@@ -125,7 +120,7 @@ abstract class ProvSSLSessionBase
 
     public long getLastAccessedTime()
     {
-        return lastAccessedTime;
+        return lastAccessedTime.get();
     }
 
     public Certificate[] getLocalCertificates()
@@ -161,7 +156,7 @@ abstract class ProvSSLSessionBase
          */
 
         ProtocolVersion protocolVersion = getProtocolTLS();
-        if (null == protocolVersion || !TlsUtils.isTLSv12(protocolVersion))
+        if (null == protocolVersion || !TlsUtils.isTLSv11(protocolVersion))
         {
             // Worst case accounts for possible application data splitting (before TLS 1.1)
             return (1 << 14) + 1 + (RecordFormat.FRAGMENT_OFFSET + 1024) * 2;
@@ -183,29 +178,7 @@ abstract class ProvSSLSessionBase
          * "Note: this method exists for compatibility with previous releases. New applications
          * should use getPeerCertificates() instead."
          */
-        X509Certificate[] peerCertificates = (X509Certificate[])getPeerCertificates();
-        javax.security.cert.X509Certificate[] chain = new javax.security.cert.X509Certificate[peerCertificates.length];
-
-        try
-        {
-            for (int i = 0; i < peerCertificates.length; ++i)
-            {
-                if (isFips)
-                {
-                    chain[i] = new X509CertificateWrapper(peerCertificates[i]);
-                }
-                else
-                {
-                    chain[i] = javax.security.cert.X509Certificate.getInstance(peerCertificates[i].getEncoded());
-                }
-            }
-        }
-        catch (Exception e)
-        {
-            throw new SSLPeerUnverifiedException(e.getMessage());
-        }
-
-        return chain;
+        return OldCertUtil.getPeerCertificateChain(this);
     }
 
     public Certificate[] getPeerCertificates() throws SSLPeerUnverifiedException
@@ -259,7 +232,7 @@ abstract class ProvSSLSessionBase
             sm.checkPermission(new SSLPermission("getSSLSessionContext"));
         }
 
-        return sslSessionContext;
+        return sslSessionContext.get();
     }
 
     public Object getValue(String name)
@@ -281,21 +254,24 @@ abstract class ProvSSLSessionBase
         return Arrays.hashCode(getIDArray());
     }
 
-    public synchronized void invalidate()
+    public final void invalidate()
     {
-        // NOTE: The NULL_SESSION never actually gets invalidated (consistent with SunJSSE)
-
-        if (null != sslSessionContext)
-        {
-            sslSessionContext.removeSession(getIDArray());
-
-            this.sslSessionContext = null;
-        }
+        implInvalidate(true);
     }
 
-    public synchronized boolean isValid()
+    final void invalidatedBySessionContext()
     {
-        if (null == sslSessionContext)
+        implInvalidate(false);
+    }
+
+    public boolean isFipsMode()
+    {
+        return isFips;
+    }
+
+    public boolean isValid()
+    {
+        if (null == sslSessionContext.get())
         {
             return false;
         }
@@ -342,189 +318,23 @@ abstract class ProvSSLSessionBase
         }
     }
 
-    @SuppressWarnings("deprecation")
-    private static class X509CertificateWrapper extends javax.security.cert.X509Certificate
+    private void implInvalidate(boolean removeFromSessionContext)
     {
-        private final X509Certificate c;
+        // NOTE: The NULL_SESSION never actually gets invalidated (consistent with SunJSSE)
 
-        private X509CertificateWrapper(X509Certificate c)
+        if (removeFromSessionContext)
         {
-            this.c = c;
-        }
-
-        @Override
-        public void checkValidity()
-            throws javax.security.cert.CertificateExpiredException, javax.security.cert.CertificateNotYetValidException
-        {
-            try
+            ProvSSLSessionContext context = sslSessionContext.getAndSet(null);
+            if (null != context)
             {
-                c.checkValidity();
-            }
-            catch (CertificateExpiredException e)
-            {
-                throw new javax.security.cert.CertificateExpiredException(e.getMessage());
-            }
-            catch (CertificateNotYetValidException e)
-            {
-                throw new javax.security.cert.CertificateNotYetValidException(e.getMessage());
+                context.removeSession(getIDArray());
             }
         }
-
-        @Override
-        public void checkValidity(Date date)
-            throws javax.security.cert.CertificateExpiredException, javax.security.cert.CertificateNotYetValidException
+        else
         {
-            try
-            {
-                c.checkValidity(date);
-            }
-            catch (CertificateExpiredException e)
-            {
-                throw new javax.security.cert.CertificateExpiredException(e.getMessage());
-            }
-            catch (CertificateNotYetValidException e)
-            {
-                throw new javax.security.cert.CertificateNotYetValidException(e.getMessage());
-            }
+            sslSessionContext.set(null);
         }
 
-        @Override
-        public int getVersion()
-        {
-            return c.getVersion() - 1;
-        }
-
-        @Override
-        public BigInteger getSerialNumber()
-        {
-            return c.getSerialNumber();
-        }
-
-        @Override
-        public Principal getIssuerDN()
-        {
-            return c.getIssuerX500Principal();
-        }
-
-        @Override
-        public Principal getSubjectDN()
-        {
-            return c.getSubjectX500Principal();
-        }
-
-        @Override
-        public Date getNotBefore()
-        {
-            return c.getNotBefore();
-        }
-
-        @Override
-        public Date getNotAfter()
-        {
-            return c.getNotAfter();
-        }
-
-        @Override
-        public String getSigAlgName()
-        {
-            return c.getSigAlgName();
-        }
-
-        @Override
-        public String getSigAlgOID()
-        {
-            return c.getSigAlgOID();
-        }
-
-        @Override
-        public byte[] getSigAlgParams()
-        {
-            return c.getSigAlgParams();
-        }
-
-        @Override
-        public byte[] getEncoded() throws javax.security.cert.CertificateEncodingException
-        {
-            try
-            {
-                return c.getEncoded();
-            }
-            catch (CertificateEncodingException e)
-            {
-                throw new javax.security.cert.CertificateEncodingException(e.getMessage());
-            }
-        }
-
-        @Override
-        public void verify(PublicKey key) throws javax.security.cert.CertificateException, NoSuchAlgorithmException,
-            InvalidKeyException, NoSuchProviderException, SignatureException
-        {
-            try
-            {
-                c.verify(key);
-            }
-            catch (CertificateEncodingException e)
-            {
-                throw new javax.security.cert.CertificateEncodingException(e.getMessage());
-            }
-            catch (CertificateExpiredException e)
-            {
-                throw new javax.security.cert.CertificateExpiredException(e.getMessage());
-            }
-            catch (CertificateNotYetValidException e)
-            {
-                throw new javax.security.cert.CertificateNotYetValidException(e.getMessage());
-            }
-            catch (CertificateParsingException e)
-            {
-                throw new javax.security.cert.CertificateParsingException(e.getMessage());
-            }
-            catch (CertificateException e)
-            {
-                throw new javax.security.cert.CertificateException(e.getMessage());
-            }
-        }
-
-        @Override
-        public void verify(PublicKey key, String sigProvider) throws javax.security.cert.CertificateException,
-            NoSuchAlgorithmException, InvalidKeyException, NoSuchProviderException, SignatureException
-        {
-            try
-            {
-                c.verify(key, sigProvider);
-            }
-            catch (CertificateEncodingException e)
-            {
-                throw new javax.security.cert.CertificateEncodingException(e.getMessage());
-            }
-            catch (CertificateExpiredException e)
-            {
-                throw new javax.security.cert.CertificateExpiredException(e.getMessage());
-            }
-            catch (CertificateNotYetValidException e)
-            {
-                throw new javax.security.cert.CertificateNotYetValidException(e.getMessage());
-            }
-            catch (CertificateParsingException e)
-            {
-                throw new javax.security.cert.CertificateParsingException(e.getMessage());
-            }
-            catch (CertificateException e)
-            {
-                throw new javax.security.cert.CertificateException(e.getMessage());
-            }
-        }
-
-        @Override
-        public String toString()
-        {
-            return c.toString();
-        }
-
-        @Override
-        public PublicKey getPublicKey()
-        {
-            return c.getPublicKey();
-        }
+        invalidateTLS();
     }
 }

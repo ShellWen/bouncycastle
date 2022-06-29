@@ -30,6 +30,7 @@ import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.cert.X509AttributeCertificateHolder;
 import org.bouncycastle.cert.X509CRLHolder;
 import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.operator.DigestAlgorithmIdentifierFinder;
 import org.bouncycastle.util.CollectionStore;
 import org.bouncycastle.util.Store;
 
@@ -127,14 +128,17 @@ class CMSSignedHelper
         return encryptionAlgOID;
     }
 
-    AlgorithmIdentifier fixAlgID(AlgorithmIdentifier algId)
+    AlgorithmIdentifier fixDigestAlgID(AlgorithmIdentifier algId, DigestAlgorithmIdentifierFinder dgstAlgFinder)
     {
-        if (algId.getParameters() == null)
+        ASN1Encodable params = algId.getParameters();
+        if (params == null || DERNull.INSTANCE.equals(params))
         {
-            return new AlgorithmIdentifier(algId.getAlgorithm(), DERNull.INSTANCE);
+            return dgstAlgFinder.find(algId.getAlgorithm());
         }
-
-        return algId;
+        else
+        {
+            return algId;
+        }
     }
 
     void setSigningEncryptionAlgorithmMapping(ASN1ObjectIdentifier oid, String algorithmName)
@@ -176,7 +180,18 @@ class CMSSignedHelper
 
                 if (obj instanceof ASN1TaggedObject)
                 {
-                    certList.add(new X509AttributeCertificateHolder(AttributeCertificate.getInstance(((ASN1TaggedObject)obj).getObject())));
+                    ASN1TaggedObject tObj = (ASN1TaggedObject)obj;
+
+                    // CertificateChoices ::= CHOICE {
+                    //     certificate Certificate,
+                    //     extendedCertificate [0] IMPLICIT ExtendedCertificate,  -- Obsolete
+                    //     v1AttrCert [1] IMPLICIT AttributeCertificateV1,        -- Obsolete
+                    //     v2AttrCert [2] IMPLICIT AttributeCertificateV2,
+                    //     other [3] IMPLICIT OtherCertificateFormat }
+                    if (tObj.getTagNo() == 1 || tObj.getTagNo() == 2)
+                    {
+                        certList.add(new X509AttributeCertificateHolder(AttributeCertificate.getInstance(tObj.getObject())));
+                    }
                 }
             }
 

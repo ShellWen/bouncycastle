@@ -97,7 +97,7 @@ public class TlsSRPKeyExchange
     {
         TlsSRPConfig config = srpLoginParameters.getConfig();
 
-        srpServer = context.getCrypto().createSRP6Server(config, srpLoginParameters.getVerifier());
+        this.srpServer = context.getCrypto().createSRP6Server(config, srpLoginParameters.getVerifier());
 
         BigInteger B = srpServer.generateServerCredentials();
 
@@ -110,7 +110,7 @@ public class TlsSRPKeyExchange
 
         if (serverCredentials != null)
         {
-            TlsUtils.generateServerKeyExchangeSignature(context, serverCredentials, digestBuffer);
+            TlsUtils.generateServerKeyExchangeSignature(context, serverCredentials, null, digestBuffer);
         }
 
         return digestBuffer.toByteArray();
@@ -131,7 +131,7 @@ public class TlsSRPKeyExchange
 
         if (digestBuffer != null)
         {
-            TlsUtils.verifyServerKeyExchangeSignature(context, input, serverCertificate, digestBuffer);
+            TlsUtils.verifyServerKeyExchangeSignature(context, input, serverCertificate, null, digestBuffer);
         }
 
         TlsSRPConfig config = new TlsSRPConfig();
@@ -176,6 +176,7 @@ public class TlsSRPKeyExchange
          */
         this.srpPeerCredentials = validatePublicValue(srpLoginParameters.getConfig().getExplicitNG()[0],
             TlsSRPUtils.readSRPParameter(input));
+
         context.getSecurityParametersHandshake().srpIdentity = Arrays.clone(srpLoginParameters.getIdentity());
     }
 
@@ -189,7 +190,7 @@ public class TlsSRPKeyExchange
         return context.getCrypto().createSecret(BigIntegers.asUnsignedByteArray(S));
     }
 
-    public static BigInteger validatePublicValue(BigInteger N, BigInteger val)
+    protected static BigInteger validatePublicValue(BigInteger N, BigInteger val)
         throws IOException
     {
         val = val.mod(N);

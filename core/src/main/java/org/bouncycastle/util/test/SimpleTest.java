@@ -72,6 +72,16 @@ public abstract class SimpleTest
     }
 
     protected void isEquals(
+        boolean a,
+        boolean b)
+    {
+        if (a != b)
+        {
+            throw new TestFailedException(SimpleTestResult.failed(this, "no message"));
+        }
+    }
+
+    protected void isEquals(
         String message,
         boolean a,
         boolean b)
@@ -206,7 +216,7 @@ public abstract class SimpleTest
         {
             result.getException().printStackTrace(out);
         }
-
+        // -DM out.println
         out.println(result);
     }
 
@@ -218,9 +228,12 @@ public abstract class SimpleTest
     public static void runTests(Test[] tests, PrintStream out)
     {
         Vector failures = new Vector();
+
         for (int i = 0; i != tests.length; i++)
         {
             TestResult result = tests[i].perform();
+
+
             if (!result.isSuccessful())
             {
                 failures.addElement(result);
@@ -230,25 +243,31 @@ public abstract class SimpleTest
             {
                 result.getException().printStackTrace(out);
             }
-
+            // -DM out.println
             out.println(result);
         }
 
+        // -DM out.print
         out.println("-----");
         if (failures.isEmpty())
         {
+            // -DM out.print
             out.println("All tests successful.");
         }
         else
         {
+            // -DM out.print
             out.println("Completed with " + failures.size() + " FAILURES:");
 
             Enumeration e = failures.elements();
             while (e.hasMoreElements())
             {
+                // -DM System.out.print
                 System.out.println("=>  " + (TestResult)e.nextElement());
             }
         }
+
+
 
     }
 }

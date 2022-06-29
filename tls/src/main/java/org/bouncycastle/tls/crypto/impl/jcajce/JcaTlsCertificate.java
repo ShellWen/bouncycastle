@@ -10,6 +10,7 @@ import java.security.cert.X509Certificate;
 import java.security.interfaces.DSAPublicKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
+import java.security.spec.AlgorithmParameterSpec;
 
 import javax.crypto.interfaces.DHPublicKey;
 
@@ -23,14 +24,18 @@ import org.bouncycastle.asn1.x509.Certificate;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.jcajce.util.JcaJceHelper;
 import org.bouncycastle.tls.AlertDescription;
-import org.bouncycastle.tls.ConnectionEnd;
-import org.bouncycastle.tls.KeyExchangeAlgorithm;
+import org.bouncycastle.tls.HashAlgorithm;
 import org.bouncycastle.tls.SignatureAlgorithm;
+import org.bouncycastle.tls.SignatureScheme;
 import org.bouncycastle.tls.TlsFatalAlert;
 import org.bouncycastle.tls.TlsUtils;
+import org.bouncycastle.tls.crypto.Tls13Verifier;
 import org.bouncycastle.tls.crypto.TlsCertificate;
+import org.bouncycastle.tls.crypto.TlsCertificateRole;
 import org.bouncycastle.tls.crypto.TlsCryptoException;
+import org.bouncycastle.tls.crypto.TlsEncryptor;
 import org.bouncycastle.tls.crypto.TlsVerifier;
+import org.bouncycastle.tls.crypto.impl.LegacyTls13Verifier;
 import org.bouncycastle.tls.crypto.impl.RSAUtil;
 
 /**
@@ -71,7 +76,8 @@ public class JcaTlsCertificate
              * 
              * Re-encoding validates as BER and produces DER.
              */
-            byte[] derEncoding = Certificate.getInstance(encoding).getEncoded(ASN1Encoding.DER);
+            ASN1Primitive asn1 = TlsUtils.readASN1Object(encoding);
+            byte[] derEncoding = Certificate.getInstance(asn1).getEncoded(ASN1Encoding.DER);
 
             ByteArrayInputStream input = new ByteArrayInputStream(derEncoding);
             X509Certificate certificate = (X509Certificate)helper.createCertificateFactory("X.509")
@@ -107,39 +113,161 @@ public class JcaTlsCertificate
         this.certificate = certificate;
     }
 
+    public TlsEncryptor createEncryptor(int tlsCertificateRole) throws IOException
+    {
+        validateKeyUsageBit(JcaTlsCertificate.KU_KEY_ENCIPHERMENT);
+
+        switch (tlsCertificateRole)
+        {
+        case TlsCertificateRole.RSA_ENCRYPTION:
+        {
+            this.pubKeyRSA = getPubKeyRSA();
+            return new JcaTlsRSAEncryptor(crypto, pubKeyRSA);
+        }
+        // TODO[gmssl]
+//        case TlsCertificateRole.SM2_ENCRYPTION:
+//        {
+//            this.pubKeyEC = getPubKeyEC();
+//            return new JcaTlsSM2Encryptor(crypto, pubKeyEC);
+//        }
+        }
+
+        throw new TlsFatalAlert(AlertDescription.certificate_unknown);
+    }
+
     public TlsVerifier createVerifier(short signatureAlgorithm) throws IOException
     {
+        switch (signatureAlgorithm)
+        {
+        case SignatureAlgorithm.ed25519:
+        case SignatureAlgorithm.ed448:
+        {
+            int signatureScheme = SignatureScheme.from(HashAlgorithm.Intrinsic, signatureAlgorithm);
+            Tls13Verifier tls13Verifier = createVerifier(signatureScheme);
+            return new LegacyTls13Verifier(signatureScheme, tls13Verifier);
+        }
+        }
+
         validateKeyUsageBit(KU_DIGITAL_SIGNATURE);
 
         switch (signatureAlgorithm)
         {
-        case SignatureAlgorithm.rsa:
-            validateRSA_PKCS1();
-            return new JcaTlsRSAVerifier(crypto, getPubKeyRSA());
-
         case SignatureAlgorithm.dsa:
             return new JcaTlsDSAVerifier(crypto, getPubKeyDSS());
 
         case SignatureAlgorithm.ecdsa:
             return new JcaTlsECDSAVerifier(crypto, getPubKeyEC());
 
-        case SignatureAlgorithm.ed25519:
-            return new JcaTlsEd25519Verifier(crypto, getPubKeyEd25519());
-
-        case SignatureAlgorithm.ed448:
-            return new JcaTlsEd448Verifier(crypto, getPubKeyEd448());
-
-        case SignatureAlgorithm.rsa_pss_rsae_sha256:
-        case SignatureAlgorithm.rsa_pss_rsae_sha384:
-        case SignatureAlgorithm.rsa_pss_rsae_sha512:
-            validateRSA_PSS_RSAE();
-            return new JcaTlsRSAPSSVerifier(crypto, getPubKeyRSA(), signatureAlgorithm);
+        case SignatureAlgorithm.rsa:
+        {
+            validateRSA_PKCS1();
+            return new JcaTlsRSAVerifier(crypto, getPubKeyRSA());
+        }
 
         case SignatureAlgorithm.rsa_pss_pss_sha256:
         case SignatureAlgorithm.rsa_pss_pss_sha384:
         case SignatureAlgorithm.rsa_pss_pss_sha512:
+        {
             validateRSA_PSS_PSS(signatureAlgorithm);
-            return new JcaTlsRSAPSSVerifier(crypto, getPubKeyRSA(), signatureAlgorithm);
+            int signatureScheme = SignatureScheme.from(HashAlgorithm.Intrinsic, signatureAlgorithm);
+            return new JcaTlsRSAPSSVerifier(crypto, getPubKeyRSA(), signatureScheme);
+        }
+
+        case SignatureAlgorithm.rsa_pss_rsae_sha256:
+        case SignatureAlgorithm.rsa_pss_rsae_sha384:
+        case SignatureAlgorithm.rsa_pss_rsae_sha512:
+        {
+            validateRSA_PSS_RSAE();
+            int signatureScheme = SignatureScheme.from(HashAlgorithm.Intrinsic, signatureAlgorithm);
+            return new JcaTlsRSAPSSVerifier(crypto, getPubKeyRSA(), signatureScheme);
+        }
+
+        default:
+            throw new TlsFatalAlert(AlertDescription.certificate_unknown);
+        }
+    }
+
+    public Tls13Verifier createVerifier(int signatureScheme) throws IOException
+    {
+        validateKeyUsageBit(KU_DIGITAL_SIGNATURE);
+
+        switch (signatureScheme)
+        {
+        case SignatureScheme.ecdsa_brainpoolP256r1tls13_sha256:
+        case SignatureScheme.ecdsa_brainpoolP384r1tls13_sha384:
+        case SignatureScheme.ecdsa_brainpoolP512r1tls13_sha512:
+        case SignatureScheme.ecdsa_secp256r1_sha256:
+        case SignatureScheme.ecdsa_secp384r1_sha384:
+        case SignatureScheme.ecdsa_secp521r1_sha512:
+        case SignatureScheme.ecdsa_sha1:
+        {
+            int cryptoHashAlgorithm = SignatureScheme.getCryptoHashAlgorithm(signatureScheme);
+            String digestName = crypto.getDigestName(cryptoHashAlgorithm);
+            String sigName = org.bouncycastle.tls.crypto.impl.jcajce.RSAUtil.getDigestSigAlgName(digestName)
+                + "WITHECDSA";
+
+            return crypto.createTls13Verifier(sigName, null, getPubKeyEC());
+        }
+
+        case SignatureScheme.ed25519:
+            return crypto.createTls13Verifier("Ed25519", null, getPubKeyEd25519());
+
+        case SignatureScheme.ed448:
+            return crypto.createTls13Verifier("Ed448", null, getPubKeyEd448());
+
+        case SignatureScheme.rsa_pkcs1_sha1:
+        case SignatureScheme.rsa_pkcs1_sha256:
+        case SignatureScheme.rsa_pkcs1_sha384:
+        case SignatureScheme.rsa_pkcs1_sha512:
+        {
+            validateRSA_PKCS1();
+
+            int cryptoHashAlgorithm = SignatureScheme.getCryptoHashAlgorithm(signatureScheme);
+            String digestName = crypto.getDigestName(cryptoHashAlgorithm);
+            String sigName = org.bouncycastle.tls.crypto.impl.jcajce.RSAUtil.getDigestSigAlgName(digestName)
+                + "WITHRSA";
+
+            return crypto.createTls13Verifier(sigName, null, getPubKeyRSA());
+        }
+
+        case SignatureScheme.rsa_pss_pss_sha256:
+        case SignatureScheme.rsa_pss_pss_sha384:
+        case SignatureScheme.rsa_pss_pss_sha512:
+        {
+            validateRSA_PSS_PSS(SignatureScheme.getSignatureAlgorithm(signatureScheme));
+            
+            int cryptoHashAlgorithm = SignatureScheme.getCryptoHashAlgorithm(signatureScheme);
+            String digestName = crypto.getDigestName(cryptoHashAlgorithm);
+            String sigName = org.bouncycastle.tls.crypto.impl.jcajce.RSAUtil.getDigestSigAlgName(digestName)
+                + "WITHRSAANDMGF1";
+
+            // NOTE: We explicitly set them even though they should be the defaults, because providers vary
+            AlgorithmParameterSpec pssSpec = org.bouncycastle.tls.crypto.impl.jcajce.RSAUtil
+                .getPSSParameterSpec(cryptoHashAlgorithm, digestName, crypto.getHelper());
+
+            return crypto.createTls13Verifier(sigName, pssSpec, getPubKeyRSA());
+        }
+
+        case SignatureScheme.rsa_pss_rsae_sha256:
+        case SignatureScheme.rsa_pss_rsae_sha384:
+        case SignatureScheme.rsa_pss_rsae_sha512:
+        {
+            validateRSA_PSS_RSAE();
+
+            int cryptoHashAlgorithm = SignatureScheme.getCryptoHashAlgorithm(signatureScheme);
+            String digestName = crypto.getDigestName(cryptoHashAlgorithm);
+            String sigName = org.bouncycastle.tls.crypto.impl.jcajce.RSAUtil.getDigestSigAlgName(digestName)
+                + "WITHRSAANDMGF1";
+
+            // NOTE: We explicitly set them even though they should be the defaults, because providers vary
+            AlgorithmParameterSpec pssSpec = org.bouncycastle.tls.crypto.impl.jcajce.RSAUtil
+                .getPSSParameterSpec(cryptoHashAlgorithm, digestName, crypto.getHelper());
+
+            return crypto.createTls13Verifier(sigName, pssSpec, getPubKeyRSA());
+        }
+
+        // TODO[RFC 8998]
+//        case SignatureScheme.sm2sig_sm3:
 
         default:
             throw new TlsFatalAlert(AlertDescription.certificate_unknown);
@@ -178,8 +306,15 @@ public class JcaTlsCertificate
     public ASN1Encodable getSigAlgParams() throws IOException
     {
         byte[] derEncoding = certificate.getSigAlgParams();
+        if (null == derEncoding)
+        {
+            return null;
+        }
 
-        return null == derEncoding ? null : TlsUtils.readDERObject(derEncoding);
+        ASN1Primitive asn1 = TlsUtils.readASN1Object(derEncoding);
+        // TODO[tls] Without a known ASN.1 type, this is not-quite-right
+        TlsUtils.requireDEREncoding(asn1, derEncoding);
+        return asn1;
     }
 
     DHPublicKey getPubKeyDH() throws IOException
@@ -304,39 +439,23 @@ public class JcaTlsCertificate
         return implSupportsSignatureAlgorithm(signatureAlgorithm);
     }
 
-    public TlsCertificate useInRole(int connectionEnd, int keyExchangeAlgorithm) throws IOException
+    public TlsCertificate checkUsageInRole(int tlsCertificateRole) throws IOException
     {
-        switch (keyExchangeAlgorithm)
+        switch (tlsCertificateRole)
         {
-        case KeyExchangeAlgorithm.DH_DSS:
-        case KeyExchangeAlgorithm.DH_RSA:
+        case TlsCertificateRole.DH:
         {
             validateKeyUsageBit(KU_KEY_AGREEMENT);
             this.pubKeyDH = getPubKeyDH();
             return this;
         }
 
-        case KeyExchangeAlgorithm.ECDH_ECDSA:
-        case KeyExchangeAlgorithm.ECDH_RSA:
+        case TlsCertificateRole.ECDH:
         {
             validateKeyUsageBit(KU_KEY_AGREEMENT);
             this.pubKeyEC = getPubKeyEC();
             return this;
         }
-        }
-
-        if (connectionEnd == ConnectionEnd.server)
-        {
-            switch (keyExchangeAlgorithm)
-            {
-            case KeyExchangeAlgorithm.RSA:
-            case KeyExchangeAlgorithm.RSA_PSK:
-            {
-                validateKeyUsageBit(KU_KEY_ENCIPHERMENT);
-                this.pubKeyRSA = getPubKeyRSA();
-                return this;
-            }
-            }
         }
 
         throw new TlsFatalAlert(AlertDescription.certificate_unknown);
@@ -356,6 +475,9 @@ public class JcaTlsCertificate
             return publicKey instanceof DSAPublicKey;
 
         case SignatureAlgorithm.ecdsa:
+        case SignatureAlgorithm.ecdsa_brainpoolP256r1tls13_sha256:
+        case SignatureAlgorithm.ecdsa_brainpoolP384r1tls13_sha384:
+        case SignatureAlgorithm.ecdsa_brainpoolP512r1tls13_sha512:
             return publicKey instanceof ECPublicKey;
 
         case SignatureAlgorithm.ed25519:

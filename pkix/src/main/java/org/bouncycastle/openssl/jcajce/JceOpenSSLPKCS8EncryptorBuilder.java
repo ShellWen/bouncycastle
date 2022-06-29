@@ -80,7 +80,17 @@ public class JceOpenSSLPKCS8EncryptorBuilder
         return this;
     }
 
+    /**
+     * @deprecated Incorrectly spelt - use setPassword()
+     */
     public JceOpenSSLPKCS8EncryptorBuilder setPasssword(char[] password)
+    {
+        this.password = password;
+
+        return this;
+    }
+
+    public JceOpenSSLPKCS8EncryptorBuilder setPassword(char[] password)
     {
         this.password = password;
 
@@ -134,7 +144,7 @@ public class JceOpenSSLPKCS8EncryptorBuilder
 
         try
         {
-            this.cipher = helper.createCipher(algOID.getId());
+            this.cipher = helper.createCipher(PEMUtilities.getCipherName(algOID));
 
             if (PEMUtilities.isPKCS5Scheme2(algOID))
             {

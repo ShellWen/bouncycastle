@@ -15,6 +15,7 @@ import org.bouncycastle.asn1.x509.KeyPurposeId;
 import org.bouncycastle.jcajce.util.JcaJceHelper;
 import org.bouncycastle.jsse.BCX509ExtendedTrustManager;
 import org.bouncycastle.jsse.java.security.BCAlgorithmConstraints;
+import org.bouncycastle.tls.TlsUtils;
 
 class ImportX509TrustManager_5
     extends BCX509ExtendedTrustManager
@@ -88,7 +89,7 @@ class ImportX509TrustManager_5
     {
         checkAlgorithmConstraints(chain, authType, transportData, checkServerTrusted);
 
-        ProvX509TrustManager.checkExtendedTrust(chain, authType, transportData, checkServerTrusted);
+        ProvX509TrustManager.checkExtendedTrust(chain, transportData, checkServerTrusted);
     }
 
     private void checkAlgorithmConstraints(X509Certificate[] chain, String authType, TransportData transportData,
@@ -113,7 +114,7 @@ class ImportX509TrustManager_5
     private Set<X509Certificate> getTrustedCerts()
     {
         X509Certificate[] issuers = getAcceptedIssuers();
-        if (null == issuers || issuers.length < 1)
+        if (TlsUtils.isNullOrEmpty(issuers))
         {
             return Collections.emptySet();
         }
@@ -132,7 +133,7 @@ class ImportX509TrustManager_5
 
     private static X509Certificate[] checkChain(X509Certificate[] chain)
     {
-        if (null == chain || chain.length < 1)
+        if (TlsUtils.isNullOrEmpty(chain))
         {
             throw new IllegalArgumentException("'chain' must be a chain of at least one certificate");
         }

@@ -77,9 +77,6 @@ public class PSKTlsServerTest
                 catch (IOException e)
                 {
                 }
-                finally
-                {
-                }
             }
         }
     }

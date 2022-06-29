@@ -17,7 +17,8 @@ public class SignatureAlgorithm
     public static final short ed448 = 8;
 
     /*
-     * RFC 8446 (implied for TLS 1.2 use)
+     * RFC 8446 (implied from SignatureScheme values)
+     * RFC 8447 reserved these values without allocating the implied names
      */
     public static final short rsa_pss_rsae_sha256 = 4;
     public static final short rsa_pss_rsae_sha384 = 5;
@@ -25,6 +26,19 @@ public class SignatureAlgorithm
     public static final short rsa_pss_pss_sha256 = 9;
     public static final short rsa_pss_pss_sha384 = 10;
     public static final short rsa_pss_pss_sha512 = 11;
+
+    /*
+     * RFC 8734 (implied from SignatureScheme values)
+     */
+    public static final short ecdsa_brainpoolP256r1tls13_sha256 = 26;
+    public static final short ecdsa_brainpoolP384r1tls13_sha384 = 27;
+    public static final short ecdsa_brainpoolP512r1tls13_sha512 = 28;
+
+    /*
+     * draft-smyshlyaev-tls12-gost-suites-10
+     */
+    public static final short gostr34102012_256 = 64;
+    public static final short gostr34102012_512 = 65;
 
     public static short getClientCertificateType(short signatureAlgorithm)
     {
@@ -47,6 +61,12 @@ public class SignatureAlgorithm
         case SignatureAlgorithm.ed448:
             return ClientCertificateType.ecdsa_sign;
 
+        case SignatureAlgorithm.gostr34102012_256:
+            return ClientCertificateType.gost_sign256;
+
+        case SignatureAlgorithm.gostr34102012_512:
+            return ClientCertificateType.gost_sign512;
+
         default:
             return -1;
         }
@@ -64,42 +84,34 @@ public class SignatureAlgorithm
             return "dsa";
         case ecdsa:
             return "ecdsa";
-        case ed25519:
-            return "ed25519";
-        case ed448:
-            return "ed448";
         case rsa_pss_rsae_sha256:
             return "rsa_pss_rsae_sha256";
         case rsa_pss_rsae_sha384:
             return "rsa_pss_rsae_sha384";
         case rsa_pss_rsae_sha512:
             return "rsa_pss_rsae_sha512";
+        case ed25519:
+            return "ed25519";
+        case ed448:
+            return "ed448";
         case rsa_pss_pss_sha256:
             return "rsa_pss_pss_sha256";
         case rsa_pss_pss_sha384:
             return "rsa_pss_pss_sha384";
         case rsa_pss_pss_sha512:
             return "rsa_pss_pss_sha512";
+        case ecdsa_brainpoolP256r1tls13_sha256:
+            return "ecdsa_brainpoolP256r1tls13_sha256";
+        case ecdsa_brainpoolP384r1tls13_sha384:
+            return "ecdsa_brainpoolP384r1tls13_sha384";
+        case ecdsa_brainpoolP512r1tls13_sha512:
+            return "ecdsa_brainpoolP512r1tls13_sha512";
+        case gostr34102012_256:
+            return "gostr34102012_256";
+        case gostr34102012_512:
+            return "gostr34102012_512";
         default:
             return "UNKNOWN";
-        }
-    }
-
-    public static short getRSAPSSHashAlgorithm(short signatureAlgorithm)
-    {
-        switch (signatureAlgorithm)
-        {
-        case rsa_pss_rsae_sha256:
-        case rsa_pss_pss_sha256:
-            return HashAlgorithm.sha256;
-        case rsa_pss_rsae_sha384:
-        case rsa_pss_pss_sha384:
-            return HashAlgorithm.sha384;
-        case rsa_pss_rsae_sha512:
-        case rsa_pss_pss_sha512:
-            return HashAlgorithm.sha512;
-        default:
-            return -1;
         }
     }
 
@@ -108,34 +120,27 @@ public class SignatureAlgorithm
         return getName(signatureAlgorithm) + "(" + signatureAlgorithm + ")";
     }
 
-    public static boolean hasIntrinsicHash(short signatureAlgorithm)
+    public static boolean isRecognized(short signatureAlgorithm)
     {
         switch (signatureAlgorithm)
         {
+        case anonymous:
+        case rsa:
+        case dsa:
+        case ecdsa:
+        case rsa_pss_rsae_sha256:
+        case rsa_pss_rsae_sha384:
+        case rsa_pss_rsae_sha512:
         case ed25519:
         case ed448:
-        case rsa_pss_rsae_sha256:
-        case rsa_pss_rsae_sha384:
-        case rsa_pss_rsae_sha512:
         case rsa_pss_pss_sha256:
         case rsa_pss_pss_sha384:
         case rsa_pss_pss_sha512:
-            return true;
-        default:
-            return false;
-        }
-    }
-
-    public static boolean isRSAPSS(short signatureAlgorithm)
-    {
-        switch (signatureAlgorithm)
-        {
-        case rsa_pss_rsae_sha256:
-        case rsa_pss_pss_sha256:
-        case rsa_pss_rsae_sha384:
-        case rsa_pss_pss_sha384:
-        case rsa_pss_rsae_sha512:
-        case rsa_pss_pss_sha512:
+        case ecdsa_brainpoolP256r1tls13_sha256:
+        case ecdsa_brainpoolP384r1tls13_sha384:
+        case ecdsa_brainpoolP512r1tls13_sha512:
+        case gostr34102012_256:
+        case gostr34102012_512:
             return true;
         default:
             return false;

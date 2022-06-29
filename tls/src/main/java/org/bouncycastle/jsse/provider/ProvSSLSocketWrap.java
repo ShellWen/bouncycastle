@@ -137,9 +137,9 @@ class ProvSSLSocketWrap
         return getContextData().getX509KeyManager().chooseClientKeyBC(keyTypes, JsseUtils.clone(issuers), this);
     }
 
-    public BCX509Key chooseServerKey(String keyType, Principal[] issuers)
+    public BCX509Key chooseServerKey(String[] keyTypes, Principal[] issuers)
     {
-        return getContextData().getX509KeyManager().chooseServerKeyBC(keyType, JsseUtils.clone(issuers), this);
+        return getContextData().getX509KeyManager().chooseServerKeyBC(keyTypes, JsseUtils.clone(issuers), this);
     }
 
     @Override
@@ -194,7 +194,7 @@ class ProvSSLSocketWrap
         }
     }
 
-    // An SSLSocket method from JDK 9, but also a BCSSLSocket method
+    // An SSLSocket method from JDK 9 (and then 8u251), but also a BCSSLSocket method
     public synchronized String getApplicationProtocol()
     {
         return null == connection ? null : connection.getApplicationProtocol();
@@ -253,7 +253,7 @@ class ProvSSLSocketWrap
         return enableSessionCreation;
     }
 
-    // An SSLSocket method from JDK 9, but also a BCSSLSocket method
+    // An SSLSocket method from JDK 9 (and then 8u251), but also a BCSSLSocket method
     public synchronized String getHandshakeApplicationProtocol()
     {
         return null == handshakeSession ? null : handshakeSession.getApplicationProtocol();
@@ -723,7 +723,7 @@ class ProvSSLSocketWrap
 
     synchronized void notifyConnected()
     {
-        if (null != peerHost && peerHost.length() > 0)
+        if (JsseUtils.isNameSpecified(peerHost))
         {
             this.peerHostSNI = peerHost;
             return;
@@ -746,6 +746,15 @@ class ProvSSLSocketWrap
 //            this.peerHostSNI = originalHostName;
 //            return;
 //        }
+
+        if (useClientMode && provAssumeOriginalHostName)
+        {
+            String originalHostName = peerAddress.getHostName();
+
+            this.peerHost = originalHostName;
+            this.peerHostSNI = originalHostName;
+            return;
+        }
 
         if (useClientMode && provJdkTlsTrustNameService)
         {
@@ -785,7 +794,7 @@ class ProvSSLSocketWrap
 
             byte[] buf = new byte[1];
             int ret = protocol.readApplicationData(buf, 0, 1);
-            return ret < 0 ? -1 : buf[0] & 0xFF;
+            return ret < 1 ? -1 : buf[0] & 0xFF;
         }
 
         @Override

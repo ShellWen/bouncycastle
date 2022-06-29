@@ -11,6 +11,7 @@ import java.util.Iterator;
 import java.util.Map;
 
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.bc.BCObjectIdentifiers;
 import org.bouncycastle.asn1.isara.IsaraObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
@@ -28,6 +29,7 @@ import org.bouncycastle.pqc.jcajce.provider.newhope.NHKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.qtesla.QTESLAKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.rainbow.RainbowKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.sphincs.Sphincs256KeyFactorySpi;
+import org.bouncycastle.pqc.jcajce.provider.sphincsplus.SPHINCSPlusKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.xmss.XMSSKeyFactorySpi;
 import org.bouncycastle.pqc.jcajce.provider.xmss.XMSSMTKeyFactorySpi;
 
@@ -58,7 +60,7 @@ import org.bouncycastle.pqc.jcajce.provider.xmss.XMSSMTKeyFactorySpi;
 public final class BouncyCastleProvider extends Provider
     implements ConfigurableProvider
 {
-    private static String info = "BouncyCastle Security Provider v1.68";
+    private static String info = "BouncyCastle Security Provider v1.72b";
 
     public static final String PROVIDER_NAME = "BC";
 
@@ -100,12 +102,12 @@ public final class BouncyCastleProvider extends Provider
     // later ones configure it.
     private static final String[] ASYMMETRIC_GENERIC =
     {
-        "X509", "IES", "COMPOSITE"
+        "X509", "IES", "COMPOSITE", "EXTERNAL"
     };
 
     private static final String[] ASYMMETRIC_CIPHERS =
     {
-        "DSA", "DH", "EC", "RSA", "GOST", "ECGOST", "ElGamal", "DSTU4145", "GM", "EdEC"
+        "DSA", "DH", "EC", "RSA", "GOST", "ECGOST", "ElGamal", "DSTU4145", "GM", "EdEC", "LMS", "SPHINCSPlus"
     };
 
     /*
@@ -116,7 +118,7 @@ public final class BouncyCastleProvider extends Provider
     {
         "GOST3411", "Keccak", "MD2", "MD4", "MD5", "SHA1", "RIPEMD128", "RIPEMD160", "RIPEMD256", "RIPEMD320", "SHA224",
         "SHA256", "SHA384", "SHA512", "SHA3", "Skein", "SM3", "Tiger", "Whirlpool", "Blake2b", "Blake2s", "DSTU7564",
-        "Haraka"
+        "Haraka", "Blake3"
     };
 
     /*
@@ -144,7 +146,7 @@ public final class BouncyCastleProvider extends Provider
      */
     public BouncyCastleProvider()
     {
-        super(PROVIDER_NAME, 1.68, info);
+        super(PROVIDER_NAME, 1.7199, info);
 
         AccessController.doPrivileged(new PrivilegedAction()
         {
@@ -255,6 +257,10 @@ public final class BouncyCastleProvider extends Provider
 
     private void loadPQCKeys()
     {
+        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus, new SPHINCSPlusKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_shake_256, new SPHINCSPlusKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha_256, new SPHINCSPlusKeyFactorySpi());
+        addKeyInfoConverter(BCObjectIdentifiers.sphincsPlus_sha_512, new SPHINCSPlusKeyFactorySpi());
         addKeyInfoConverter(PQCObjectIdentifiers.sphincs256, new Sphincs256KeyFactorySpi());
         addKeyInfoConverter(PQCObjectIdentifiers.newHope, new NHKeyFactorySpi());
         addKeyInfoConverter(PQCObjectIdentifiers.xmss, new XMSSKeyFactorySpi());

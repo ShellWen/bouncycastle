@@ -12,12 +12,11 @@ import org.bouncycastle.tls.CertificateRequest;
 import org.bouncycastle.tls.ChannelBinding;
 import org.bouncycastle.tls.ClientCertificateType;
 import org.bouncycastle.tls.DefaultTlsClient;
-import org.bouncycastle.tls.MaxFragmentLength;
+import org.bouncycastle.tls.ProtocolName;
 import org.bouncycastle.tls.ProtocolVersion;
 import org.bouncycastle.tls.SignatureAlgorithm;
 import org.bouncycastle.tls.TlsAuthentication;
 import org.bouncycastle.tls.TlsCredentials;
-import org.bouncycastle.tls.TlsExtensionsUtils;
 import org.bouncycastle.tls.TlsFatalAlert;
 import org.bouncycastle.tls.TlsServerCertificate;
 import org.bouncycastle.tls.TlsSession;
@@ -132,13 +131,19 @@ class MockDTLSClient
     {
         super.notifyHandshakeComplete();
 
+        ProtocolName protocolName = context.getSecurityParametersConnection().getApplicationProtocol();
+        if (protocolName != null)
+        {
+            System.out.println("Client ALPN: " + protocolName.getUtf8Decoding());
+        }
+
         TlsSession newSession = context.getSession();
         if (newSession != null)
         {
             if (newSession.isResumable())
             {
                 byte[] newSessionID = newSession.getSessionID();
-                String hex = Hex.toHexString(newSessionID);
+                String hex = hex(newSessionID);
 
                 if (this.session != null && Arrays.areEqual(this.session.getSessionID(), newSessionID))
                 {
@@ -163,6 +168,26 @@ class MockDTLSClient
         }
     }
 
+    public Hashtable getClientExtensions() throws IOException
+    {
+        if (context.getSecurityParametersHandshake().getClientRandom() == null)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
+
+        return super.getClientExtensions();
+    }
+
+    public void processServerExtensions(Hashtable serverExtensions) throws IOException
+    {
+        if (context.getSecurityParametersHandshake().getServerRandom() == null)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
+
+        super.processServerExtensions(serverExtensions);
+    }
+
     protected String hex(byte[] data)
     {
         return data == null ? "(null)" : Hex.toHexString(data);
@@ -170,6 +195,6 @@ class MockDTLSClient
 
     protected ProtocolVersion[] getSupportedVersions()
     {
-        return ProtocolVersion.DTLSv12.downTo(ProtocolVersion.DTLSv10);
+        return ProtocolVersion.DTLSv12.only();
     }
 }

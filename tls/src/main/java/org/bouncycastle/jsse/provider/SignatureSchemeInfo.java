@@ -13,6 +13,7 @@ import java.util.logging.Logger;
 
 import org.bouncycastle.jsse.java.security.BCAlgorithmConstraints;
 import org.bouncycastle.jsse.java.security.BCCryptoPrimitive;
+import org.bouncycastle.tls.NamedGroup;
 import org.bouncycastle.tls.ProtocolVersion;
 import org.bouncycastle.tls.SignatureAndHashAlgorithm;
 import org.bouncycastle.tls.SignatureScheme;
@@ -45,20 +46,26 @@ class SignatureSchemeInfo
         ecdsa_secp384r1_sha384(SignatureScheme.ecdsa_secp384r1_sha384, "SHA384withECDSA", "EC"),
         ecdsa_secp521r1_sha512(SignatureScheme.ecdsa_secp521r1_sha512, "SHA512withECDSA", "EC"),
 
-        // NOTE: SunJSSE is using "RSASSA-PSS" as 'jcaSignatureAlgorithm' for all these
-        rsa_pss_rsae_sha256(SignatureScheme.rsa_pss_rsae_sha256, "SHA256withRSAandMGF1", "RSA"),
-        rsa_pss_rsae_sha384(SignatureScheme.rsa_pss_rsae_sha384, "SHA384withRSAandMGF1", "RSA"),
-        rsa_pss_rsae_sha512(SignatureScheme.rsa_pss_rsae_sha512, "SHA512withRSAandMGF1", "RSA"),
+        ecdsa_brainpoolP256r1tls13_sha256(SignatureScheme.ecdsa_brainpoolP256r1tls13_sha256, "SHA256withECDSA", "EC"),
+        ecdsa_brainpoolP384r1tls13_sha384(SignatureScheme.ecdsa_brainpoolP384r1tls13_sha384, "SHA384withECDSA", "EC"),
+        ecdsa_brainpoolP512r1tls13_sha512(SignatureScheme.ecdsa_brainpoolP512r1tls13_sha512, "SHA512withECDSA", "EC"),
 
         // NOTE: SunJSSE is using "RSASSA-PSS" as 'jcaSignatureAlgorithm' for all these
         rsa_pss_pss_sha256(SignatureScheme.rsa_pss_pss_sha256, "SHA256withRSAandMGF1", "RSASSA-PSS"),
         rsa_pss_pss_sha384(SignatureScheme.rsa_pss_pss_sha384, "SHA384withRSAandMGF1", "RSASSA-PSS"),
         rsa_pss_pss_sha512(SignatureScheme.rsa_pss_pss_sha512, "SHA512withRSAandMGF1", "RSASSA-PSS"),
 
+        // NOTE: SunJSSE is using "RSASSA-PSS" as 'jcaSignatureAlgorithm' for all these
+        rsa_pss_rsae_sha256(SignatureScheme.rsa_pss_rsae_sha256, "SHA256withRSAandMGF1", "RSA"),
+        rsa_pss_rsae_sha384(SignatureScheme.rsa_pss_rsae_sha384, "SHA384withRSAandMGF1", "RSA"),
+        rsa_pss_rsae_sha512(SignatureScheme.rsa_pss_rsae_sha512, "SHA512withRSAandMGF1", "RSA"),
+
         // Deprecated: only for certs in 1.3
         rsa_pkcs1_sha256(SignatureScheme.rsa_pkcs1_sha256, "SHA256withRSA", "RSA", true),
         rsa_pkcs1_sha384(SignatureScheme.rsa_pkcs1_sha384, "SHA384withRSA", "RSA", true),
         rsa_pkcs1_sha512(SignatureScheme.rsa_pkcs1_sha512, "SHA512withRSA", "RSA", true),
+
+        sm2sig_sm3(SignatureScheme.sm2sig_sm3, "SM3withSM2", "EC"),
 
         /*
          * Legacy/Historical: mostly not supported in 1.3, except ecdsa_sha1 and rsa_pkcs1_sha1 are
@@ -79,7 +86,9 @@ class SignatureSchemeInfo
         private final String jcaSignatureAlgorithm;
         private final String jcaSignatureAlgorithmBC;
         private final String keyAlgorithm;
-        private final boolean supported13;
+        private final String keyType13;
+        private final boolean supportedPost13;
+        private final boolean supportedPre13;
         private final boolean supportedCerts13;
         private final int namedGroup13;
 
@@ -95,11 +104,11 @@ class SignatureSchemeInfo
             this(signatureScheme, jcaSignatureAlgorithm, keyAlgorithm, false, supportedCerts13, -1);
         }
 
-        private All(int signatureScheme, String jcaSignatureAlgorithm, String keyAlgorithm, boolean supported13,
+        private All(int signatureScheme, String jcaSignatureAlgorithm, String keyAlgorithm, boolean supportedPost13,
             boolean supportedCerts13, int namedGroup13)
         {
             this(signatureScheme, SignatureScheme.getName(signatureScheme), jcaSignatureAlgorithm, keyAlgorithm,
-                supported13, supportedCerts13, namedGroup13);
+                supportedPost13, supportedCerts13, namedGroup13);
         }
 
         // Historical
@@ -109,15 +118,21 @@ class SignatureSchemeInfo
         }
 
         private All(int signatureScheme, String name, String jcaSignatureAlgorithm, String keyAlgorithm,
-            boolean supported13, boolean supportedCerts13, int namedGroup13)
+            boolean supportedPost13, boolean supportedCerts13, int namedGroup13)
         {
+            String keyType13 = JsseUtils.getKeyType13(keyAlgorithm, namedGroup13);
+            String jcaSignatureAlgorithmBC = JsseUtils.getJcaSignatureAlgorithmBC(jcaSignatureAlgorithm, keyAlgorithm);
+
+
             this.signatureScheme = signatureScheme;
             this.name = name;
             this.text = name + "(0x" + Integer.toHexString(signatureScheme) + ")";
             this.jcaSignatureAlgorithm = jcaSignatureAlgorithm;
-            this.jcaSignatureAlgorithmBC = JsseUtils.getJcaSignatureAlgorithmBC(jcaSignatureAlgorithm, keyAlgorithm);
+            this.jcaSignatureAlgorithmBC = jcaSignatureAlgorithmBC;
             this.keyAlgorithm = keyAlgorithm;
-            this.supported13 = supported13;
+            this.keyType13 = keyType13;
+            this.supportedPost13 = supportedPost13;
+            this.supportedPre13 = (namedGroup13 < 0) || NamedGroup.canBeNegotiated(namedGroup13, ProtocolVersion.TLSv12);
             this.supportedCerts13 = supportedCerts13;
             this.namedGroup13 = namedGroup13;
         }
@@ -174,7 +189,7 @@ class SignatureSchemeInfo
             SignatureSchemeInfo signatureSchemeInfo = perContext.index.get(candidate);
 
             if (null != signatureSchemeInfo
-                && signatureSchemeInfo.isActiveCerts(algorithmConstraints, pre13Active, post13Active, namedGroups))
+                && signatureSchemeInfo.isActiveCerts(algorithmConstraints, post13Active, pre13Active, namedGroups))
             {
                 result.add(signatureSchemeInfo);
             }
@@ -191,7 +206,7 @@ class SignatureSchemeInfo
     {
         if (null == infos)
         {
-            return new String[0];
+            return TlsUtils.EMPTY_STRINGS;
         }
 
         ArrayList<String> result = new ArrayList<String>();
@@ -200,14 +215,14 @@ class SignatureSchemeInfo
             // TODO The two kinds of PSS signature scheme can give duplicates here
             result.add(info.getJcaSignatureAlgorithm());
         }
-        return result.toArray(new String[0]);
+        return result.toArray(TlsUtils.EMPTY_STRINGS);
     }
 
     static String[] getJcaSignatureAlgorithmsBC(Collection<SignatureSchemeInfo> infos)
     {
         if (null == infos)
         {
-            return new String[0];
+            return TlsUtils.EMPTY_STRINGS;
         }
 
         ArrayList<String> result = new ArrayList<String>();
@@ -215,7 +230,7 @@ class SignatureSchemeInfo
         {
             result.add(info.getJcaSignatureAlgorithmBC());
         }
-        return result.toArray(new String[0]);
+        return result.toArray(TlsUtils.EMPTY_STRINGS);
     }
 
     static SignatureAndHashAlgorithm getSignatureAndHashAlgorithm(int signatureScheme)
@@ -225,10 +240,7 @@ class SignatureSchemeInfo
             throw new IllegalArgumentException();
         }
 
-        short hashAlgorithm = SignatureScheme.getHashAlgorithm(signatureScheme);
-        short signatureAlgorithm = SignatureScheme.getSignatureAlgorithm(signatureScheme);
-
-        return SignatureAndHashAlgorithm.getInstance(hashAlgorithm, signatureAlgorithm);
+        return SignatureScheme.getSignatureAndHashAlgorithm(signatureScheme);
     }
 
     static Vector<SignatureAndHashAlgorithm> getSignatureAndHashAlgorithms(List<SignatureSchemeInfo> signatureSchemeInfos)
@@ -259,18 +271,6 @@ class SignatureSchemeInfo
         return result;
     }
 
-    static int getSignatureScheme(SignatureAndHashAlgorithm sigAndHashAlg)
-    {
-        if (null == sigAndHashAlg)
-        {
-            throw new NullPointerException();
-        }
-
-        short hashAlgorithm = sigAndHashAlg.getHash(), signatureAlgorithm = sigAndHashAlg.getSignature();
-
-        return ((hashAlgorithm & 0xFF) << 8) | (signatureAlgorithm & 0xFF);
-    }
-
     static List<SignatureSchemeInfo> getSignatureSchemes(PerContext perContext,
         Vector<SignatureAndHashAlgorithm> sigAndHashAlgs)
     {
@@ -286,7 +286,7 @@ class SignatureSchemeInfo
             SignatureAndHashAlgorithm sigAndHashAlg = sigAndHashAlgs.elementAt(i);
             if (null != sigAndHashAlg)
             {
-                int signatureScheme = SignatureSchemeInfo.getSignatureScheme(sigAndHashAlg);
+                int signatureScheme = SignatureScheme.from(sigAndHashAlg);
 
                 SignatureSchemeInfo signatureSchemeInfo = perContext.index.get(signatureScheme);
                 if (null != signatureSchemeInfo)
@@ -321,7 +321,7 @@ class SignatureSchemeInfo
         if (namedGroup13 >= 0)
         {
             namedGroupInfo = NamedGroupInfo.getNamedGroup(ng, namedGroup13);
-            if (null == namedGroupInfo || !namedGroupInfo.isEnabled())
+            if (null == namedGroupInfo || !namedGroupInfo.isEnabled() || !namedGroupInfo.isSupportedPost13())
             {
                 disabled13 = true;
             }
@@ -436,11 +436,14 @@ class SignatureSchemeInfo
     {
         switch (signatureScheme)
         {
-        case SignatureScheme.ecdsa_sha1:
-        case historical_ecdsa_sha224:
+        case SignatureScheme.ecdsa_brainpoolP256r1tls13_sha256:
+        case SignatureScheme.ecdsa_brainpoolP384r1tls13_sha384:
+        case SignatureScheme.ecdsa_brainpoolP512r1tls13_sha512:
         case SignatureScheme.ecdsa_secp256r1_sha256:
         case SignatureScheme.ecdsa_secp384r1_sha384:
         case SignatureScheme.ecdsa_secp521r1_sha512:
+        case SignatureScheme.ecdsa_sha1:
+        case historical_ecdsa_sha224:
             return true;
 
         default:
@@ -479,9 +482,14 @@ class SignatureSchemeInfo
         return all.jcaSignatureAlgorithmBC;
     }
 
-    String getKeyAlgorithm()
+    String getKeyType()
     {
         return all.keyAlgorithm;
+    }
+
+    String getKeyType13()
+    {
+        return all.keyType13;
     }
 
     String getName()
@@ -509,19 +517,19 @@ class SignatureSchemeInfo
         return all.signatureScheme;
     }
 
-    boolean isActive(BCAlgorithmConstraints algorithmConstraints, boolean pre13Active, boolean post13Active,
+    boolean isActive(BCAlgorithmConstraints algorithmConstraints, boolean post13Active, boolean pre13Active,
         NamedGroupInfo.PerConnection namedGroupInfos)
     {
         return enabled
-            && isNamedGroupOK(pre13Active, post13Active && isSupported13(), namedGroupInfos)
+            && isNamedGroupOK(post13Active && isSupportedPost13(), pre13Active && isSupportedPre13(), namedGroupInfos)
             && isPermittedBy(algorithmConstraints);
     }
 
-    boolean isActiveCerts(BCAlgorithmConstraints algorithmConstraints, boolean pre13Active, boolean post13Active,
+    boolean isActiveCerts(BCAlgorithmConstraints algorithmConstraints, boolean post13Active, boolean pre13Active,
         NamedGroupInfo.PerConnection namedGroupInfos)
     {
         return enabled
-            && isNamedGroupOK(pre13Active, post13Active && isSupportedCerts13(), namedGroupInfos)
+            && isNamedGroupOK(post13Active && isSupportedCerts13(), pre13Active && isSupportedPre13(), namedGroupInfos)
             && isPermittedBy(algorithmConstraints);
     }
 
@@ -530,9 +538,14 @@ class SignatureSchemeInfo
         return enabled;
     }
 
-    boolean isSupported13()
+    boolean isSupportedPost13()
     {
-        return !disabled13 && all.supported13;
+        return !disabled13 && all.supportedPost13;
+    }
+
+    boolean isSupportedPre13()
+    {
+        return all.supportedPre13;
     }
 
     boolean isSupportedCerts13()
@@ -546,7 +559,7 @@ class SignatureSchemeInfo
         return all.text;
     }
 
-    private boolean isNamedGroupOK(boolean pre13Allowed, boolean post13Allowed, NamedGroupInfo.PerConnection namedGroupInfos)
+    private boolean isNamedGroupOK(boolean post13Allowed, boolean pre13Allowed, NamedGroupInfo.PerConnection namedGroupInfos)
     {
         if (null != namedGroupInfo)
         {

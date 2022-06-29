@@ -2,7 +2,7 @@ package org.bouncycastle.tls.test;
 
 import java.io.IOException;
 import java.io.PrintStream;
-import java.security.SecureRandom;
+import java.util.Hashtable;
 import java.util.Vector;
 
 import org.bouncycastle.asn1.x500.X500Name;
@@ -16,6 +16,7 @@ import org.bouncycastle.tls.ClientCertificateType;
 import org.bouncycastle.tls.ConnectionEnd;
 import org.bouncycastle.tls.DefaultTlsServer;
 import org.bouncycastle.tls.ProtocolVersion;
+import org.bouncycastle.tls.SecurityParameters;
 import org.bouncycastle.tls.SignatureAlgorithm;
 import org.bouncycastle.tls.TlsCredentialedDecryptor;
 import org.bouncycastle.tls.TlsCredentialedSigner;
@@ -23,8 +24,6 @@ import org.bouncycastle.tls.TlsCredentials;
 import org.bouncycastle.tls.TlsFatalAlert;
 import org.bouncycastle.tls.TlsUtils;
 import org.bouncycastle.tls.crypto.TlsCertificate;
-import org.bouncycastle.tls.crypto.TlsCrypto;
-import org.bouncycastle.tls.crypto.impl.bc.BcTlsCrypto;
 import org.bouncycastle.util.encoders.Hex;
 
 class TlsTestServerImpl
@@ -69,12 +68,14 @@ class TlsTestServerImpl
     protected int firstFatalAlertConnectionEnd = -1;
     protected short firstFatalAlertDescription = -1;
 
+    byte[] tlsKeyingMaterial1 = null;
+    byte[] tlsKeyingMaterial2 = null;
     byte[] tlsServerEndPoint = null;
     byte[] tlsUnique = null;
 
     TlsTestServerImpl(TlsTestConfig config)
     {
-        super(new BcTlsCrypto(new SecureRandom()));
+        super(TlsTestSuite.getCrypto(config));
 
         this.config = config;
     }
@@ -101,17 +102,6 @@ class TlsTestServerImpl
         }
 
         return super.getCredentials();
-    }
-
-    public TlsCrypto getCrypto()
-    {
-        switch (config.serverCrypto)
-        {
-        case TlsTestConfig.CRYPTO_JCA:
-            return TlsTestSuite.JCA_CRYPTO;
-        default:
-            return TlsTestSuite.BC_CRYPTO;
-        }
     }
 
     public void notifyAlertRaised(short alertLevel, short alertDescription, String message, Throwable cause)
@@ -157,6 +147,13 @@ class TlsTestServerImpl
     public void notifyHandshakeComplete() throws IOException
     {
         super.notifyHandshakeComplete();
+
+        SecurityParameters securityParameters = context.getSecurityParametersConnection();
+        if (securityParameters.isExtendedMasterSecret())
+        {
+            tlsKeyingMaterial1 = context.exportKeyingMaterial("BC_TLS_TESTS_1", null, 16);
+            tlsKeyingMaterial2 = context.exportKeyingMaterial("BC_TLS_TESTS_2", new byte[8], 16);
+        }
 
         tlsServerEndPoint = context.exportChannelBinding(ChannelBinding.tls_server_end_point);
         tlsUnique = context.exportChannelBinding(ChannelBinding.tls_unique);
@@ -282,13 +279,41 @@ class TlsTestServerImpl
         }
     }
 
+    public void processClientExtensions(Hashtable clientExtensions) throws IOException
+    {
+        if (context.getSecurityParametersHandshake().getClientRandom() == null)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
+
+        super.processClientExtensions(clientExtensions);
+    }
+
+    public Hashtable getServerExtensions() throws IOException
+    {
+        if (context.getSecurityParametersHandshake().getServerRandom() == null)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
+
+        return super.getServerExtensions();
+    }
+
+    public void getServerExtensionsForConnection(Hashtable serverExtensions) throws IOException
+    {
+        if (context.getSecurityParametersHandshake().getServerRandom() == null)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
+
+        super.getServerExtensionsForConnection(serverExtensions);
+    }
+
     protected Vector getSupportedSignatureAlgorithms()
     {
         if (TlsUtils.isTLSv12(context) && config.serverAuthSigAlg != null)
         {
-            Vector signatureAlgorithms = new Vector(1);
-            signatureAlgorithms.addElement(config.serverAuthSigAlg);
-            return signatureAlgorithms;
+            return TlsUtils.vectorOfOne(config.serverAuthSigAlg);
         }
 
         return context.getSecurityParametersHandshake().getClientSigAlgs();

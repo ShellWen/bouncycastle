@@ -3,23 +3,33 @@ package org.bouncycastle.pqc.crypto.util;
 import java.io.IOException;
 
 import org.bouncycastle.asn1.DEROctetString;
+import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.isara.IsaraObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
+import org.bouncycastle.pqc.asn1.CMCEPublicKey;
+import org.bouncycastle.pqc.asn1.McElieceCCA2PublicKey;
 import org.bouncycastle.pqc.asn1.PQCObjectIdentifiers;
 import org.bouncycastle.pqc.asn1.SPHINCS256KeyParams;
 import org.bouncycastle.pqc.asn1.XMSSKeyParams;
 import org.bouncycastle.pqc.asn1.XMSSMTKeyParams;
 import org.bouncycastle.pqc.asn1.XMSSMTPublicKey;
 import org.bouncycastle.pqc.asn1.XMSSPublicKey;
+import org.bouncycastle.pqc.crypto.cmce.CMCEPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.frodo.FrodoPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.lms.Composer;
 import org.bouncycastle.pqc.crypto.lms.HSSPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.lms.LMSPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.mceliece.McElieceCCA2PublicKeyParameters;
 import org.bouncycastle.pqc.crypto.newhope.NHPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.picnic.PicnicPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.qtesla.QTESLAPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.saber.SABERPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.sike.SIKEPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.sphincs.SPHINCSPublicKeyParameters;
+import org.bouncycastle.pqc.crypto.sphincsplus.SPHINCSPlusPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.xmss.XMSSMTPublicKeyParameters;
 import org.bouncycastle.pqc.crypto.xmss.XMSSPublicKeyParameters;
 
@@ -83,6 +93,26 @@ public class SubjectPublicKeyInfoFactory
             AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(PKCSObjectIdentifiers.id_alg_hss_lms_hashsig);
             return new SubjectPublicKeyInfo(algorithmIdentifier, new DEROctetString(encoding));
         }
+        else if (publicKey instanceof SPHINCSPlusPublicKeyParameters)
+        {
+            SPHINCSPlusPublicKeyParameters params = (SPHINCSPlusPublicKeyParameters)publicKey;
+
+            byte[] encoding = params.getEncoded();
+
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.sphincsPlusOidLookup(params.getParameters()));
+            return new SubjectPublicKeyInfo(algorithmIdentifier, new DEROctetString(encoding));
+        }
+        else if (publicKey instanceof CMCEPublicKeyParameters)
+        {
+            CMCEPublicKeyParameters params = (CMCEPublicKeyParameters)publicKey;
+
+            byte[] encoding = params.getEncoded();
+
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.mcElieceOidLookup(params.getParameters()));
+
+            // https://datatracker.ietf.org/doc/draft-uni-qsckeys/
+            return new SubjectPublicKeyInfo(algorithmIdentifier, new CMCEPublicKey(encoding));
+        }
         else if (publicKey instanceof XMSSPublicKeyParameters)
         {
             XMSSPublicKeyParameters keyParams = (XMSSPublicKeyParameters)publicKey;
@@ -123,6 +153,52 @@ public class SubjectPublicKeyInfoFactory
                     Utils.xmssLookupTreeAlgID(keyParams.getTreeDigest())));
                 return new SubjectPublicKeyInfo(algorithmIdentifier, new XMSSMTPublicKey(keyParams.getPublicSeed(), keyParams.getRoot()));
             }
+        }
+        else if (publicKey instanceof McElieceCCA2PublicKeyParameters)
+        {
+            McElieceCCA2PublicKeyParameters pub = (McElieceCCA2PublicKeyParameters)publicKey;
+            McElieceCCA2PublicKey mcEliecePub = new McElieceCCA2PublicKey(pub.getN(), pub.getT(), pub.getG(), Utils.getAlgorithmIdentifier(pub.getDigest()));
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(PQCObjectIdentifiers.mcElieceCca2);
+
+            return new SubjectPublicKeyInfo(algorithmIdentifier, mcEliecePub);
+        }
+        else if (publicKey instanceof FrodoPublicKeyParameters)
+        {
+            FrodoPublicKeyParameters params = (FrodoPublicKeyParameters)publicKey;
+
+            byte[] encoding = params.getEncoded();
+
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.frodoOidLookup(params.getParameters()));
+
+            return new SubjectPublicKeyInfo(algorithmIdentifier, (new DEROctetString(encoding)));
+        }
+        else if (publicKey instanceof SABERPublicKeyParameters)
+        {
+            SABERPublicKeyParameters params = (SABERPublicKeyParameters)publicKey;
+
+            byte[] encoding = params.getEncoded();
+
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.saberOidLookup(params.getParameters()));
+
+            // https://datatracker.ietf.org/doc/draft-uni-qsckeys/
+            return new SubjectPublicKeyInfo(algorithmIdentifier, new DERSequence(new DEROctetString(encoding)));
+        }
+        else if (publicKey instanceof PicnicPublicKeyParameters)
+        {
+            PicnicPublicKeyParameters params = (PicnicPublicKeyParameters)publicKey;
+
+            byte[] encoding = params.getEncoded();
+
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.picnicOidLookup(params.getParameters()));
+            return new SubjectPublicKeyInfo(algorithmIdentifier, new DEROctetString(encoding));
+        }
+        else if (publicKey instanceof SIKEPublicKeyParameters)
+        {
+            SIKEPublicKeyParameters params = (SIKEPublicKeyParameters)publicKey;
+
+            byte[] encoding = params.getEncoded();
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.sikeOidLookup(params.getParameters()));
+            return new SubjectPublicKeyInfo(algorithmIdentifier, new DEROctetString(encoding));
         }
         else
         {

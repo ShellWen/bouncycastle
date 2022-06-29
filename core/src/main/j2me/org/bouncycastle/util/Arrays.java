@@ -1087,6 +1087,42 @@ public final class Arrays
         return result;
     }
 
+    public static byte[] reverseInPlace(byte[] a)
+    {
+        if (null == a)
+        {
+            return null;
+        }
+
+        int p1 = 0, p2 = a.length - 1;
+        while (p1 < p2)
+        {
+            byte t1 = a[p1], t2 = a[p2];
+            a[p1++] = t2;
+            a[p2--] = t1;
+        }
+
+        return a;
+    }
+
+    public static int[] reverseInPlace(int[] a)
+    {
+        if (null == a)
+        {
+            return null;
+        }
+
+        int p1 = 0, p2 = a.length - 1;
+        while (p1 < p2)
+        {
+            int t1 = a[p1], t2 = a[p2];
+            a[p1++] = t2;
+            a[p2--] = t1;
+        }
+
+        return a;
+    }
+
     public static byte[] concatenate(byte[][] arrays)
     {
         int size = 0;
@@ -1182,6 +1218,21 @@ public final class Arrays
         return 0 == d;
     }
 
+    public static boolean isNullOrEmpty(byte[] array)
+    {
+        return null == array || array.length < 1;
+    }
+
+    public static boolean isNullOrEmpty(int[] array)
+    {
+        return null == array || array.length < 1;
+    }
+
+    public static boolean isNullOrEmpty(Object[] array)
+    {
+        return null == array || array.length < 1;
+    }
+    
     /**
      * Iterator backed by a specific array.
      */

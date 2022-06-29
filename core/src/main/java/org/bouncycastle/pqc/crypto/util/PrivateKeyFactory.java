@@ -13,17 +13,32 @@ import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
+import org.bouncycastle.pqc.asn1.CMCEPrivateKey;
+import org.bouncycastle.pqc.asn1.McElieceCCA2PrivateKey;
 import org.bouncycastle.pqc.asn1.PQCObjectIdentifiers;
 import org.bouncycastle.pqc.asn1.SPHINCS256KeyParams;
 import org.bouncycastle.pqc.asn1.XMSSKeyParams;
 import org.bouncycastle.pqc.asn1.XMSSMTKeyParams;
 import org.bouncycastle.pqc.asn1.XMSSMTPrivateKey;
 import org.bouncycastle.pqc.asn1.XMSSPrivateKey;
+import org.bouncycastle.pqc.crypto.cmce.CMCEParameters;
+import org.bouncycastle.pqc.crypto.cmce.CMCEPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.frodo.FrodoParameters;
+import org.bouncycastle.pqc.crypto.frodo.FrodoPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.lms.HSSPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.lms.LMSPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.mceliece.McElieceCCA2PrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.newhope.NHPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.picnic.PicnicParameters;
+import org.bouncycastle.pqc.crypto.picnic.PicnicPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.qtesla.QTESLAPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.saber.SABERParameters;
+import org.bouncycastle.pqc.crypto.saber.SABERPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.sike.SIKEParameters;
+import org.bouncycastle.pqc.crypto.sike.SIKEPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.sphincs.SPHINCSPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.sphincsplus.SPHINCSPlusParameters;
+import org.bouncycastle.pqc.crypto.sphincsplus.SPHINCSPlusPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.xmss.BDS;
 import org.bouncycastle.pqc.crypto.xmss.BDSStateMap;
 import org.bouncycastle.pqc.crypto.xmss.XMSSMTParameters;
@@ -32,6 +47,7 @@ import org.bouncycastle.pqc.crypto.xmss.XMSSParameters;
 import org.bouncycastle.pqc.crypto.xmss.XMSSPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.xmss.XMSSUtil;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Integers;
 import org.bouncycastle.util.Pack;
 
 /**
@@ -117,6 +133,48 @@ public class PrivateKeyFactory
                 return HSSPrivateKeyParameters.getInstance(Arrays.copyOfRange(keyEnc, 4, keyEnc.length));
             }
         }
+        else if (algOID.on(BCObjectIdentifiers.sphincsPlus))
+        {
+            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
+            SPHINCSPlusParameters spParams = SPHINCSPlusParameters.getParams(Integers.valueOf(Pack.bigEndianToInt(keyEnc, 0)));
+
+            return new SPHINCSPlusPrivateKeyParameters(spParams, Arrays.copyOfRange(keyEnc, 4, keyEnc.length));
+        }
+        else if (algOID.on(BCObjectIdentifiers.picnic))
+        {
+            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
+            PicnicParameters pParams = Utils.picnicParamsLookup(keyInfo.getPrivateKeyAlgorithm().getAlgorithm());
+
+            return new PicnicPrivateKeyParameters(pParams, keyEnc);
+        }
+        else if (algOID.on(BCObjectIdentifiers.pqc_kem_mceliece))
+        {
+            CMCEPrivateKey cmceKey = CMCEPrivateKey.getInstance(keyInfo.parsePrivateKey());
+            CMCEParameters spParams = Utils.mcElieceParamsLookup(keyInfo.getPrivateKeyAlgorithm().getAlgorithm());
+
+            return new CMCEPrivateKeyParameters(spParams, cmceKey.getDelta(), cmceKey.getC(), cmceKey.getG(), cmceKey.getAlpha(), cmceKey.getS());
+        }
+        else if (algOID.on(BCObjectIdentifiers.pqc_kem_frodo))
+        {
+            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
+            FrodoParameters spParams = Utils.frodoParamsLookup(keyInfo.getPrivateKeyAlgorithm().getAlgorithm());
+
+            return new FrodoPrivateKeyParameters(spParams, keyEnc);
+        }
+        else if (algOID.on(BCObjectIdentifiers.pqc_kem_saber))
+        {
+            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
+            SABERParameters spParams = Utils.saberParamsLookup(keyInfo.getPrivateKeyAlgorithm().getAlgorithm());
+
+            return new SABERPrivateKeyParameters(spParams, keyEnc);
+        }
+        else if (algOID.on(BCObjectIdentifiers.pqc_kem_sike))
+        {
+            byte[] keyEnc = ASN1OctetString.getInstance(keyInfo.parsePrivateKey()).getOctets();
+            SIKEParameters spParams = Utils.sikeParamsLookup(keyInfo.getPrivateKeyAlgorithm().getAlgorithm());
+
+            return new SIKEPrivateKeyParameters(spParams, keyEnc);
+        }
         else if (algOID.equals(BCObjectIdentifiers.xmss))
         {
             XMSSKeyParams keyParams = XMSSKeyParams.getInstance(keyInfo.getPrivateKeyAlgorithm().getParameters());
@@ -186,6 +244,12 @@ public class PrivateKeyFactory
             {
                 throw new IOException("ClassNotFoundException processing BDS state: " + e.getMessage());
             }
+        }
+        else if (algOID.equals(PQCObjectIdentifiers.mcElieceCca2))
+        {
+            McElieceCCA2PrivateKey mKey = McElieceCCA2PrivateKey.getInstance(keyInfo.parsePrivateKey());
+
+            return new McElieceCCA2PrivateKeyParameters(mKey.getN(), mKey.getK(), mKey.getField(), mKey.getGoppaPoly(), mKey.getP(), Utils.getDigestName(mKey.getDigest().getAlgorithm()));
         }
         else
         {

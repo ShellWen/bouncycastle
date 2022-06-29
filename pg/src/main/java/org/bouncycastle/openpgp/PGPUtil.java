@@ -9,9 +9,16 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.security.SecureRandom;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.cryptlib.CryptlibObjectIdentifiers;
+import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
+import org.bouncycastle.asn1.sec.SECObjectIdentifiers;
+import org.bouncycastle.asn1.x9.ECNamedCurveTable;
 import org.bouncycastle.bcpg.ArmoredInputStream;
 import org.bouncycastle.bcpg.BCPGInputStream;
 import org.bouncycastle.bcpg.HashAlgorithmTags;
@@ -20,6 +27,8 @@ import org.bouncycastle.bcpg.PacketTags;
 import org.bouncycastle.bcpg.PublicKeyAlgorithmTags;
 import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
 import org.bouncycastle.util.Arrays;
+import org.bouncycastle.util.Integers;
+import org.bouncycastle.util.Strings;
 import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.util.encoders.DecoderException;
 
@@ -30,6 +39,41 @@ public class PGPUtil
     implements HashAlgorithmTags
 {
     private static String defProvider = "BC";
+
+    private static Map<String, Integer> nameToHashId = new HashMap<String, Integer>()
+    {
+        {
+            put("sha1", Integers.valueOf(HashAlgorithmTags.SHA1));
+            put("sha224", Integers.valueOf(HashAlgorithmTags.SHA224));
+            put("sha256", Integers.valueOf(HashAlgorithmTags.SHA256));
+            put("sha384", Integers.valueOf(HashAlgorithmTags.SHA384));
+            put("sha512", Integers.valueOf(HashAlgorithmTags.SHA512));
+            put("sha3-224", Integers.valueOf(HashAlgorithmTags.SHA3_224));
+            put("sha3-256", Integers.valueOf(HashAlgorithmTags.SHA3_256));
+            put("sha3-384", Integers.valueOf(HashAlgorithmTags.SHA3_384));
+            put("sha3-512", Integers.valueOf(HashAlgorithmTags.SHA3_512));
+            put("ripemd160", Integers.valueOf(HashAlgorithmTags.RIPEMD160));
+            put("rmd160", Integers.valueOf(HashAlgorithmTags.RIPEMD160));
+            put("md2", Integers.valueOf(HashAlgorithmTags.MD2));
+            put("md4", Integers.valueOf(HashAlgorithmTags.MD4));
+            put("tiger", Integers.valueOf(HashAlgorithmTags.TIGER_192));
+            put("haval", Integers.valueOf(HashAlgorithmTags.HAVAL_5_160));
+            put("sm3", Integers.valueOf(HashAlgorithmTags.SM3));
+            put("md5", Integers.valueOf(HashAlgorithmTags.MD5));
+        }
+    };
+
+    private static Map<ASN1ObjectIdentifier, String> oidToName = new HashMap<ASN1ObjectIdentifier, String>()
+    {
+        {
+            put(CryptlibObjectIdentifiers.curvey25519, "Curve25519");
+            put(EdECObjectIdentifiers.id_X25519, "Curve25519");
+            put(EdECObjectIdentifiers.id_Ed25519, "Ed25519");
+            put(SECObjectIdentifiers.secp256r1, "NIST P-256");
+            put(SECObjectIdentifiers.secp384r1, "NIST P-384");
+            put(SECObjectIdentifiers.secp521r1, "NIST P-521");
+        }
+    };
 
     /**
      * Return an appropriate name for the hash algorithm represented by the passed
@@ -65,6 +109,36 @@ public class PGPUtil
         default:
             throw new PGPException("unknown hash algorithm tag in getDigestName: " + hashAlgorithm);
         }
+    }
+
+    public static int getDigestIDForName(String name)
+    {
+        name = Strings.toLowerCase(name);
+        if (nameToHashId.containsKey(name))
+        {
+            return ((Integer)nameToHashId.get(name)).intValue();
+        }
+        throw new IllegalArgumentException("unable to map " + name + " to a hash id");
+    }
+
+    /**
+     * Return the EC curve name for the passed in OID.
+     *
+     * @param oid the EC curve object identifier in the PGP key
+     * @return  a string representation of the OID.
+     */
+    public static String getCurveName(
+        ASN1ObjectIdentifier oid)
+    {
+        String name = (String)oidToName.get(oid);
+
+        if (name != null)
+        {
+            return name;
+        }
+
+        // fall back
+        return ECNamedCurveTable.getName(oid);
     }
 
     /**
@@ -147,6 +221,7 @@ public class PGPUtil
         }
     }
 
+
     /**
      * Return the JCA/JCE provider that will be used by factory classes in situations where a
      * provider must be determined on the fly.
@@ -198,6 +273,7 @@ public class PGPUtil
 
     /**
      * Return true if the byte[] blob probably represents key ring data.
+     *
      * @return true if data likely represents a key ring stream.
      */
     public static boolean isKeyRing(byte[] blob)
@@ -213,6 +289,7 @@ public class PGPUtil
 
     /**
      * Return true if the byte[] blob probably represents key box data.
+     *
      * @return true if data likely represents a key box stream.
      */
     public static boolean isKeyBox(byte[] data)
@@ -344,11 +421,11 @@ public class PGPUtil
         pipeFileContents(file, pOut, buffer.length);
     }
 
-    private static void pipeFileContents(File file, OutputStream pOut, int bufferSize)
+    static void pipeFileContents(File file, OutputStream pOut, int bufferSize)
         throws IOException
     {
         byte[] buf = new byte[bufferSize];
-        
+
         FileInputStream in = new FileInputStream(file);
         try
         {

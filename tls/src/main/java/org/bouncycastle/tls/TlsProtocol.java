@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.Vector;
@@ -134,6 +135,8 @@ public abstract class TlsProtocol
     final RecordStream recordStream;
     final Object recordWriteLock = new Object();
 
+    private int maxHandshakeMessageSize = -1;
+
     TlsHandshakeHash handshakeHash;
 
     private TlsInputStream tlsInputStream = null;
@@ -143,6 +146,7 @@ public abstract class TlsProtocol
     private volatile boolean failedWithError = false;
     private volatile boolean appDataReady = false;
     private volatile boolean appDataSplitEnabled = true;
+    private volatile boolean keyUpdateEnabled = false;
 //    private volatile boolean keyUpdatePendingReceive = false;
     private volatile boolean keyUpdatePendingSend = false;
     private volatile boolean resumableHandshake = false;
@@ -159,6 +163,7 @@ public abstract class TlsProtocol
 
     protected short connection_state = CS_START;
     protected boolean resumedSession = false;
+    protected boolean selectedPSK13 = false;
     protected boolean receivedChangeCipherSpec = false;
     protected boolean expectSessionTicket = false;
 
@@ -219,6 +224,11 @@ public abstract class TlsProtocol
 
     protected abstract TlsPeer getPeer();
 
+    protected int getRenegotiationPolicy()
+    {
+        return RenegotiationPolicy.DENY;
+    }
+
     protected void handleAlertMessage(short alertLevel, short alertDescription)
         throws IOException
     {
@@ -277,17 +287,17 @@ public abstract class TlsProtocol
         {
             this.closed = true;
 
-            if (user_canceled && !appDataReady)
-            {
-                raiseAlertWarning(AlertDescription.user_canceled, "User canceled handshake");
-            }
-
-            raiseAlertWarning(AlertDescription.close_notify, "Connection closed");
-
             if (!appDataReady)
             {
                 cleanupHandshake();
+
+                if (user_canceled)
+                {
+                    raiseAlertWarning(AlertDescription.user_canceled, "User canceled handshake");
+                }
             }
+
+            raiseAlertWarning(AlertDescription.close_notify, "Connection closed");
 
             closeConnection();
         }
@@ -332,6 +342,46 @@ public abstract class TlsProtocol
     protected abstract void handleHandshakeMessage(short type, HandshakeMessageInput buf)
         throws IOException;
 
+    protected boolean handleRenegotiation() throws IOException
+    {
+        int renegotiationPolicy = RenegotiationPolicy.DENY;
+
+        // Never renegotiate without secure renegotiation and server certificate authentication.
+        {
+            SecurityParameters securityParameters = getContext().getSecurityParametersConnection();
+            if (null != securityParameters && securityParameters.isSecureRenegotiation())
+            {
+                Certificate serverCertificate = ConnectionEnd.server == securityParameters.getEntity()
+                    ?   securityParameters.getLocalCertificate()
+                    :   securityParameters.getPeerCertificate();
+
+                if (null != serverCertificate && !serverCertificate.isEmpty())
+                {
+                    renegotiationPolicy = getRenegotiationPolicy();
+                }
+            }
+        }
+
+        switch (renegotiationPolicy)
+        {
+        case RenegotiationPolicy.ACCEPT:
+        {
+            beginHandshake(true);
+            return true;
+        }
+        case RenegotiationPolicy.IGNORE:
+        {
+            return false;
+        }
+        case RenegotiationPolicy.DENY:
+        default:
+        {
+            refuseRenegotiation();
+            return false;
+        }
+        }
+    }
+
     protected void applyMaxFragmentLengthExtension(short maxFragmentLength) throws IOException
     {
         if (maxFragmentLength >= 0)
@@ -369,28 +419,40 @@ public abstract class TlsProtocol
         }
     }
 
-    protected void beginHandshake()
+    protected void beginHandshake(boolean renegotiation)
         throws IOException
     {
         AbstractTlsContext context = getContextAdmin(); 
         TlsPeer peer = getPeer();
 
+        this.maxHandshakeMessageSize = Math.max(1024, peer.getMaxHandshakeMessageSize());
+
         this.handshakeHash = new DeferredHash(context);
         this.connection_state = CS_START;
+        this.resumedSession = false;
+        this.selectedPSK13 = false;
 
         context.handshakeBeginning(peer);
 
         SecurityParameters securityParameters = context.getSecurityParametersHandshake();
+        if (renegotiation != securityParameters.isRenegotiating())
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
 
         securityParameters.extendedPadding = peer.shouldUseExtendedPadding();
     }
 
     protected void cleanupHandshake()
     {
-        SecurityParameters securityParameters = getContext().getSecurityParameters();
-        if (null != securityParameters)
+        TlsContext context = getContext();
+        if (null != context)
         {
-            securityParameters.clear();
+            SecurityParameters securityParameters = context.getSecurityParameters();
+            if (null != securityParameters)
+            {
+                securityParameters.clear();
+            }
         }
 
         this.tlsSession = null;
@@ -403,6 +465,7 @@ public abstract class TlsProtocol
         this.serverExtensions = null;
 
         this.resumedSession = false;
+        this.selectedPSK13 = false;
         this.receivedChangeCipherSpec = false;
         this.expectSessionTicket = false;
     }
@@ -415,7 +478,7 @@ public abstract class TlsProtocol
             AbstractTlsContext context = getContextAdmin();
             SecurityParameters securityParameters = context.getSecurityParametersHandshake();
 
-            if (appDataReady ||
+            if (!context.isHandshaking() ||
                 null == securityParameters.getLocalVerifyData() ||
                 null == securityParameters.getPeerVerifyData())
             {
@@ -431,8 +494,12 @@ public abstract class TlsProtocol
             this.alertQueue.shrink();
             this.handshakeQueue.shrink();
 
-            this.appDataSplitEnabled = !TlsUtils.isTLSv11(context);
+            ProtocolVersion negotiatedVersion = securityParameters.getNegotiatedVersion();
+
+            this.appDataSplitEnabled = !TlsUtils.isTLSv11(negotiatedVersion);
             this.appDataReady = true;
+
+            this.keyUpdateEnabled = TlsUtils.isTLSv13(negotiatedVersion);
 
             if (blocking)
             {
@@ -458,7 +525,14 @@ public abstract class TlsProtocol
                     .setServerExtensions(this.serverExtensions)
                     .build();
 
-                this.tlsSession = TlsUtils.importSession(this.tlsSession.getSessionID(), this.sessionParameters);
+                this.tlsSession = TlsUtils.importSession(securityParameters.getSessionID(), this.sessionParameters);
+            }
+            else
+            {
+                securityParameters.localCertificate = sessionParameters.getLocalCertificate();
+                securityParameters.peerCertificate = sessionParameters.getPeerCertificate();
+                securityParameters.pskIdentity = sessionParameters.getPSKIdentity();
+                securityParameters.srpIdentity = sessionParameters.getSRPIdentity();
             }
 
             context.handshakeComplete(getPeer(), this.tlsSession);
@@ -524,8 +598,8 @@ public abstract class TlsProtocol
 //                throw new TlsFatalAlert(AlertDescription.unexpected_message);
 //            }
 //            // TODO[RFC 6520]
-////            heartbeatQueue.addData(buf, offset, len);
-////            processHeartbeat();
+////            heartbeatQueue.addData(buf, off, len);
+////            processHeartbeatQueue();
 //            break;
 //        }
         default:
@@ -544,14 +618,24 @@ public abstract class TlsProtocol
             int header = queue.readInt32();
 
             short type = (short)(header >>> 24);
-            int length = header & 0x00FFFFFF;
-            int totalLength = 4 + length;
+            if (!HandshakeType.isRecognized(type))
+            {
+                throw new TlsFatalAlert(AlertDescription.unexpected_message,
+                    "Handshake message of unrecognized type: " + type);
+            }
 
-            /*
-             * Check if we have enough bytes in the buffer to read the full message.
-             */
+            int length = header & 0x00FFFFFF;
+            if (length > maxHandshakeMessageSize)
+            {
+                throw new TlsFatalAlert(AlertDescription.internal_error,
+                    "Handshake message length exceeds the maximum: " + HandshakeType.getText(type) + ", " + length
+                        + " > " + maxHandshakeMessageSize);
+            }
+
+            int totalLength = 4 + length;
             if (queue.available() < totalLength)
             {
+                // Not enough bytes in the buffer to read the full message.
                 break;
             }
 
@@ -585,13 +669,27 @@ public abstract class TlsProtocol
              */
             case HandshakeType.hello_request:
             case HandshakeType.key_update:
-            case HandshakeType.new_session_ticket:
                 break;
+
+            /*
+             * Not included in the transcript for (D)TLS 1.3+
+             */
+            case HandshakeType.new_session_ticket:
+            {
+                ProtocolVersion negotiatedVersion = getContext().getServerVersion();
+                if (null != negotiatedVersion && !TlsUtils.isTLSv13(negotiatedVersion))
+                {
+                    buf.updateHash(handshakeHash);
+                }
+
+                break;
+            }
 
             /*
              * These message types are deferred to the handler to explicitly update the transcript.
              */
             case HandshakeType.certificate_verify:
+            case HandshakeType.client_hello:
             case HandshakeType.finished:
             case HandshakeType.server_hello:
                 break;
@@ -683,24 +781,44 @@ public abstract class TlsProtocol
     }
 
     /**
-     * Read data from the network. The method will return immediately, if there is still some data
-     * left in the buffer, or block until some application data has been read from the network.
+     * Read data from the network. The method will return immediately, if there is still some data left in the
+     * buffer, or block until some application data has been read from the network.
      *
-     * @param buf    The buffer where the data will be copied to.
-     * @param offset The position where the data will be placed in the buffer.
-     * @param len    The maximum number of bytes to read.
+     * @param buf The buffer where the data will be copied to.
+     * @param off The position where the data will be placed in the buffer.
+     * @param len The maximum number of bytes to read.
      * @return The number of bytes read.
      * @throws IOException If something goes wrong during reading data.
      */
-    public int readApplicationData(byte[] buf, int offset, int len)
+    public int readApplicationData(byte[] buf, int off, int len)
         throws IOException
     {
+        // TODO Use method once available in bc-fips-java
+//        Streams.validateBufferArguments(buf, off, len);
+        {
+            if (buf == null)
+            {
+                throw new NullPointerException();
+            }
+            int available = buf.length - off;
+            int remaining = available - len;
+            if ((off | len | available | remaining) < 0)
+            {
+                throw new IndexOutOfBoundsException();
+            }
+        }
+
+        if (!appDataReady)
+        {
+            throw new IllegalStateException("Cannot read application data until initial handshake completed.");
+        }
+
         if (len < 1)
         {
             return 0;
         }
 
-        while (applicationDataQueue.available() == 0)
+        while (applicationDataQueue.available() < 1)
         {
             if (this.closed)
             {
@@ -709,10 +827,6 @@ public abstract class TlsProtocol
                     throw new IOException("Cannot read application data on failed TLS connection");
                 }
                 return -1;
-            }
-            if (!appDataReady)
-            {
-                throw new IllegalStateException("Cannot read application data until initial handshake completed.");
             }
 
             /*
@@ -723,7 +837,7 @@ public abstract class TlsProtocol
         }
 
         len = Math.min(len, applicationDataQueue.available());
-        applicationDataQueue.removeData(buf, offset, len, 0);
+        applicationDataQueue.removeData(buf, off, len, 0);
         return len;
     }
 
@@ -847,30 +961,39 @@ public abstract class TlsProtocol
     }
 
     /**
-     * Write some application data. Fragmentation is handled internally. Usable in both
-     * blocking/non-blocking modes.<br>
+     * Write some application data. Fragmentation is handled internally. Usable in both blocking/non-blocking
+     * modes.<br>
      * <br>
-     * In blocking mode, the output will be automatically sent via the underlying transport. In
-     * non-blocking mode, call {@link #readOutput(byte[], int, int)} to get the output bytes to send
-     * to the peer.<br>
+     * In blocking mode, the output will be automatically sent via the underlying transport. In non-blocking
+     * mode, call {@link #readOutput(byte[], int, int)} to get the output bytes to send to the peer.<br>
      * <br>
-     * This method must not be called until after the initial handshake is complete. Attempting to
-     * call it earlier will result in an {@link IllegalStateException}.
+     * This method must not be called until after the initial handshake is complete. Attempting to call it
+     * earlier will result in an {@link IllegalStateException}.
      *
-     * @param buf
-     *            The buffer containing application data to send
-     * @param offset
-     *            The offset at which the application data begins
-     * @param len
-     *            The number of bytes of application data
-     * @throws IllegalStateException
-     *             If called before the initial handshake has completed.
-     * @throws IOException
-     *             If connection is already closed, or for encryption or transport errors.
+     * @param buf The buffer containing application data to send
+     * @param off The offset at which the application data begins
+     * @param len The number of bytes of application data
+     * @throws IllegalStateException If called before the initial handshake has completed.
+     * @throws IOException           If connection is already closed, or for encryption or transport errors.
      */
-    public void writeApplicationData(byte[] buf, int offset, int len)
+    public void writeApplicationData(byte[] buf, int off, int len)
         throws IOException
     {
+        // TODO Use method once available in bc-fips-java
+//      Streams.validateBufferArguments(buf, off, len);
+        {
+            if (buf == null)
+            {
+                throw new NullPointerException();
+            }
+            int available = buf.length - off;
+            int remaining = available - len;
+            if ((off | len | available | remaining) < 0)
+            {
+                throw new IndexOutOfBoundsException();
+            }
+        }
+
         if (!appDataReady)
         {
             throw new IllegalStateException("Cannot write application data until initial handshake completed.");
@@ -915,27 +1038,30 @@ public abstract class TlsProtocol
                     {
                         if (len > 1)
                         {
-                            safeWriteRecord(ContentType.application_data, buf, offset, 1);
-                            ++offset;
+                            safeWriteRecord(ContentType.application_data, buf, off, 1);
+                            ++off;
                             --len;
                         }
                         break;
                     }
                     }
                 }
-                else if (keyUpdatePendingSend)
+                else if (keyUpdateEnabled)
                 {
-                    send13KeyUpdate(false);
-                }
-                else if (recordStream.needsKeyUpdate())
-                {
-                    send13KeyUpdate(true);
+                    if (keyUpdatePendingSend)
+                    {
+                        send13KeyUpdate(false);
+                    }
+                    else if (recordStream.needsKeyUpdate())
+                    {
+                        send13KeyUpdate(true);
+                    }
                 }
 
                 // Fragment data according to the current fragment limit.
                 int toWrite = Math.min(len, recordStream.getPlaintextLimit());
-                safeWriteRecord(ContentType.application_data, buf, offset, toWrite);
-                offset += toWrite;
+                safeWriteRecord(ContentType.application_data, buf, off, toWrite);
+                off += toWrite;
                 len -= toWrite;
             }
         }
@@ -954,7 +1080,7 @@ public abstract class TlsProtocol
             throw new IllegalArgumentException("Illegal appDataSplitMode mode: " + appDataSplitMode);
         }
         this.appDataSplitMode = appDataSplitMode;
-	}
+    }
 
     public boolean isResumableHandshake()
     {
@@ -966,7 +1092,7 @@ public abstract class TlsProtocol
         this.resumableHandshake = resumableHandshake;
     }
 
-    protected void writeHandshakeMessage(byte[] buf, int off, int len) throws IOException
+    void writeHandshakeMessage(byte[] buf, int off, int len) throws IOException
     {
         if (len < 4)
         {
@@ -976,11 +1102,36 @@ public abstract class TlsProtocol
         short type = TlsUtils.readUint8(buf, off);
         switch (type)
         {
+        /*
+         * These message types aren't included in the transcript.
+         */
         case HandshakeType.hello_request:
         case HandshakeType.key_update:
-        case HandshakeType.new_session_ticket:
             break;
 
+        /*
+         * Not included in the transcript for (D)TLS 1.3+
+         */
+        case HandshakeType.new_session_ticket:
+        {
+            ProtocolVersion negotiatedVersion = getContext().getServerVersion();
+            if (null != negotiatedVersion && !TlsUtils.isTLSv13(negotiatedVersion))
+            {
+                handshakeHash.update(buf, off, len);
+            }
+
+            break;
+        }
+
+        /*
+         * These message types are deferred to the writer to explicitly update the transcript.
+         */
+        case HandshakeType.client_hello:
+            break;
+
+        /*
+         * For all others we automatically update the transcript. 
+         */
         default:
         {
             handshakeHash.update(buf, off, len);
@@ -1078,8 +1229,40 @@ public abstract class TlsProtocol
         return safePreviewRecordHeader(recordHeader);
     }
 
+    public int previewOutputRecord()
+    {
+        if (blocking)
+        {
+            throw new IllegalStateException("Cannot use previewOutputRecord() in blocking mode!");
+        }
+
+        ByteQueue buffer = outputBuffer.getBuffer();
+        int available = buffer.available();
+        if (available < 1)
+        {
+            return 0;
+        }
+
+        if (available >= RecordFormat.FRAGMENT_OFFSET)
+        {
+            int length = buffer.readUint16(RecordFormat.LENGTH_OFFSET);
+            int recordSize = RecordFormat.FRAGMENT_OFFSET + length;
+
+            if (available >= recordSize)
+            {
+                return recordSize;
+            }
+        }
+
+        throw new IllegalStateException("Can only use previewOutputRecord() for record-aligned output.");
+    }
+
     public RecordPreview previewOutputRecord(int applicationDataSize) throws IOException
     {
+        if (!appDataReady)
+        {
+            throw new IllegalStateException("Cannot use previewOutputRecord() until initial handshake completed.");
+        }
         if (blocking)
         {
             throw new IllegalStateException("Cannot use previewOutputRecord() in blocking mode!");
@@ -1126,7 +1309,7 @@ public abstract class TlsProtocol
         else
         {
             RecordPreview a = recordStream.previewOutputRecord(applicationDataSize);
-            if (keyUpdatePendingSend || recordStream.needsKeyUpdate())
+            if (keyUpdateEnabled && (keyUpdatePendingSend || recordStream.needsKeyUpdate()))
             {
                 int keyUpdateLength = HandshakeMessageOutput.getLength(1);
                 int recordSize = recordStream.previewOutputRecordSize(keyUpdateLength);
@@ -1274,6 +1457,36 @@ public abstract class TlsProtocol
     }
 
     /**
+     * Retrieves received application data into a {@link ByteBuffer}. Use {@link #getAvailableInputBytes()} to
+     * check how much application data is currently available. This method functions similarly to
+     * {@link InputStream#read(byte[], int, int)}, except that it never blocks. If no data is available,
+     * nothing will be copied and zero will be returned.<br>
+     * <br>
+     * Only allowed in non-blocking mode.
+     * 
+     * @param buffer The {@link ByteBuffer} to hold the application data
+     * @param length The maximum number of bytes to read
+     * @return The total number of bytes copied to the buffer. May be less than the length specified if the
+     *         length was greater than the amount of available data.
+     */
+    public int readInput(ByteBuffer buffer, int length)
+    {
+        if (blocking)
+        {
+            throw new IllegalStateException("Cannot use readInput() in blocking mode! Use getInputStream() instead.");
+        }
+
+        length = Math.min(length, applicationDataQueue.available());
+        if (length < 1)
+        {
+            return 0;
+        }
+
+        applicationDataQueue.removeData(buffer, length, 0);
+        return length;
+    }
+
+    /**
      * Gets the amount of encrypted data available to be sent. A call to
      * {@link #readOutput(byte[], int, int)} is guaranteed to be able to return at
      * least this much data.<br>
@@ -1316,8 +1529,36 @@ public abstract class TlsProtocol
         return bytesToRead;
     }
 
+    /**
+     * Retrieves encrypted data to be sent. Use {@link #getAvailableOutputBytes()} to check
+     * how much encrypted data is currently available. This method functions similarly to
+     * {@link InputStream#read(byte[], int, int)}, except that it never blocks. If no data
+     * is available, nothing will be copied and zero will be returned.<br>
+     * <br>
+     * Only allowed in non-blocking mode.
+     * @param buffer The {@link ByteBuffer} to hold the encrypted data
+     * @param length The maximum number of bytes to read
+     * @return The total number of bytes copied to the buffer. May be less than the
+     *          length specified if the length was greater than the amount of available data.
+     */
+    public int readOutput(ByteBuffer buffer, int length)
+    {
+        if (blocking)
+        {
+            throw new IllegalStateException("Cannot use readOutput() in blocking mode! Use getOutputStream() instead.");
+        }
+
+        int bytesToRead = Math.min(getAvailableOutputBytes(), length);
+        outputBuffer.getBuffer().removeData(buffer, bytesToRead, 0);
+        return bytesToRead;
+    }
+
     protected boolean establishSession(TlsSession sessionToResume)
     {
+        this.tlsSession = null;
+        this.sessionParameters = null;
+        this.sessionMasterSecret = null;
+
         if (null == sessionToResume || !sessionToResume.isResumable())
         {
             return false;
@@ -1473,7 +1714,7 @@ public abstract class TlsProtocol
     {
         // TODO[tls13] This is interesting enough to notify the TlsPeer for possible logging/vetting
 
-        if (!appDataReady)
+        if (!(appDataReady && keyUpdateEnabled))
         {
             throw new TlsFatalAlert(AlertDescription.unexpected_message);
         }
@@ -1610,7 +1851,7 @@ public abstract class TlsProtocol
     {
         // TODO[tls13] This is interesting enough to notify the TlsPeer for possible logging/vetting
 
-        if (!appDataReady)
+        if (!(appDataReady && keyUpdateEnabled))
         {
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
@@ -1662,9 +1903,28 @@ public abstract class TlsProtocol
         return closed;
     }
 
+    public boolean isConnected()
+    {
+        if (closed)
+        {
+            return false;
+        }
+
+        AbstractTlsContext context = getContextAdmin();
+
+        return null != context && context.isConnected();
+    }
+
     public boolean isHandshaking()
     {
-        return !isClosed() && null != getContext().getSecurityParametersHandshake();
+        if (closed)
+        {
+            return false;
+        }
+
+        AbstractTlsContext context = getContextAdmin();
+
+        return null != context && context.isHandshaking();
     }
 
     protected short processMaxFragmentLengthExtension(Hashtable clientExtensions, Hashtable serverExtensions,
@@ -1907,24 +2167,38 @@ public abstract class TlsProtocol
 
     protected static void writeExtensions(OutputStream output, Hashtable extensions) throws IOException
     {
+        writeExtensions(output, extensions, 0);
+    }
+
+    protected static void writeExtensions(OutputStream output, Hashtable extensions, int bindersSize) throws IOException
+    {
         if (null == extensions || extensions.isEmpty())
         {
             return;
         }
 
-        byte[] extBytes = writeExtensionsData(extensions);
+        byte[] extBytes = writeExtensionsData(extensions, bindersSize);
 
-        TlsUtils.writeOpaque16(extBytes, output);
+        int lengthWithBinders = extBytes.length + bindersSize;
+        TlsUtils.checkUint16(lengthWithBinders);
+        TlsUtils.writeUint16(lengthWithBinders, output);
+        output.write(extBytes);
     }
 
     protected static byte[] writeExtensionsData(Hashtable extensions) throws IOException
     {
+        return writeExtensionsData(extensions, 0);
+    }
+
+    protected static byte[] writeExtensionsData(Hashtable extensions, int bindersSize) throws IOException
+    {
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
-        writeExtensionsData(extensions, buf);
+        writeExtensionsData(extensions, bindersSize, buf);
         return buf.toByteArray();
     }
 
-    protected static void writeExtensionsData(Hashtable extensions, ByteArrayOutputStream buf) throws IOException
+    protected static void writeExtensionsData(Hashtable extensions, int bindersSize, ByteArrayOutputStream buf)
+        throws IOException
     {
         /*
          * NOTE: There are reports of servers that don't accept a zero-length extension as the last
@@ -1932,6 +2206,23 @@ public abstract class TlsProtocol
          */
         writeSelectedExtensions(buf, extensions, true);
         writeSelectedExtensions(buf, extensions, false);
+        writePreSharedKeyExtension(buf, extensions, bindersSize);
+    }
+
+    protected static void writePreSharedKeyExtension(OutputStream output, Hashtable extensions, int bindersSize)
+        throws IOException
+    {
+        byte[] extension_data = (byte[])extensions.get(TlsExtensionsUtils.EXT_pre_shared_key);
+        if (null != extension_data)
+        {
+            TlsUtils.checkUint16(ExtensionType.pre_shared_key);
+            TlsUtils.writeUint16(ExtensionType.pre_shared_key, output);
+
+            int lengthWithBinders = extension_data.length + bindersSize;
+            TlsUtils.checkUint16(lengthWithBinders);
+            TlsUtils.writeUint16(lengthWithBinders, output);
+            output.write(extension_data);
+        }
     }
 
     protected static void writeSelectedExtensions(OutputStream output, Hashtable extensions, boolean selectEmpty)
@@ -1942,6 +2233,13 @@ public abstract class TlsProtocol
         {
             Integer key = (Integer)keys.nextElement();
             int extension_type = key.intValue();
+
+            // NOTE: Must be last; handled by 'writePreSharedKeyExtension'
+            if (ExtensionType.pre_shared_key == extension_type)
+            {
+                continue;
+            }
+
             byte[] extension_data = (byte[])extensions.get(key);
 
             if (selectEmpty == (extension_data.length == 0))

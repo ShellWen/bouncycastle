@@ -5,18 +5,23 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.BEROctetString;
+import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.cms.CMSObjectIdentifiers;
 import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.asn1.cms.SignedData;
 import org.bouncycastle.asn1.cms.SignerInfo;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.operator.DigestAlgorithmIdentifierFinder;
 
 /**
  * general class for generating a pkcs7-signature message.
@@ -48,12 +53,31 @@ public class CMSSignedDataGenerator
     extends CMSSignedGenerator
 {
     private List signerInfs = new ArrayList();
+    private boolean isDefiniteLength = false;
 
     /**
      * base constructor
      */
     public CMSSignedDataGenerator()
     {
+    }
+
+    /**
+     * base constructor with a custom DigestAlgorithmIdentifierFinder
+     */
+    public CMSSignedDataGenerator(DigestAlgorithmIdentifierFinder digestAlgIdFinder)
+    {
+        super(digestAlgIdFinder);
+    }
+
+    /**
+     * Specify use of definite length rather than indefinite length encoding.
+     *
+     * @param isDefiniteLength true use definite length, false use indefinite (default false).
+     */
+    public void setDefiniteLengthEncoding(boolean isDefiniteLength)
+    {
+        this.isDefiniteLength = isDefiniteLength;
     }
 
     /**
@@ -116,7 +140,7 @@ public class CMSSignedDataGenerator
 //            // TODO signedAttrs must be present for all signers
 //        }
 
-        ASN1EncodableVector  digestAlgs = new ASN1EncodableVector();
+        Set<AlgorithmIdentifier> digestAlgs = new LinkedHashSet<AlgorithmIdentifier>();
         ASN1EncodableVector  signerInfos = new ASN1EncodableVector();
 
         digests.clear();  // clear the current preserved digest state
@@ -127,8 +151,7 @@ public class CMSSignedDataGenerator
         for (Iterator it = _signers.iterator(); it.hasNext();)
         {
             SignerInformation signer = (SignerInformation)it.next();
-            digestAlgs.add(CMSSignedHelper.INSTANCE.fixAlgID(signer.getDigestAlgorithmID()));
-
+            CMSUtils.addDigestAlgs(digestAlgs, signer, digestAlgIdFinder);
             // TODO Verify the content type and calculated digest match the precalculated SignerInfo
             signerInfos.add(signer.toASN1Structure());
         }
@@ -167,7 +190,14 @@ public class CMSSignedDataGenerator
 
             if (encapsulate)
             {
-                octs = new BEROctetString(bOut.toByteArray());
+                if (isDefiniteLength)
+                {
+                    octs = new DEROctetString(bOut.toByteArray());
+                }
+                else
+                {
+                    octs = new BEROctetString(bOut.toByteArray());
+                }
             }
         }
 
@@ -191,20 +221,34 @@ public class CMSSignedDataGenerator
 
         if (certs.size() != 0)
         {
-            certificates = CMSUtils.createBerSetFromList(certs);
+            if (isDefiniteLength)
+            {
+                certificates = CMSUtils.createDlSetFromList(certs);
+            }
+            else
+            {
+                certificates = CMSUtils.createBerSetFromList(certs);
+            }
         }
 
         ASN1Set certrevlist = null;
 
         if (crls.size() != 0)
         {
-            certrevlist = CMSUtils.createBerSetFromList(crls);
+            if (isDefiniteLength)
+            {
+                certrevlist = CMSUtils.createDlSetFromList(crls);
+            }
+            else
+            {
+                certrevlist = CMSUtils.createBerSetFromList(crls);
+            }
         }
 
         ContentInfo encInfo = new ContentInfo(contentTypeOID, octs);
 
         SignedData  sd = new SignedData(
-                                 new DERSet(digestAlgs),
+                                 CMSUtils.convertToDlSet(digestAlgs),
                                  encInfo,
                                  certificates,
                                  certrevlist,

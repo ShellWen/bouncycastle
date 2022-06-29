@@ -2,16 +2,20 @@ package org.bouncycastle.pqc.jcajce.provider.mceliece;
 
 
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.security.PublicKey;
 
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
+import org.bouncycastle.jcajce.util.MessageDigestUtils;
 import org.bouncycastle.pqc.asn1.McElieceCCA2PublicKey;
 import org.bouncycastle.pqc.asn1.PQCObjectIdentifiers;
 import org.bouncycastle.pqc.crypto.mceliece.McElieceCCA2KeyPairGenerator;
 import org.bouncycastle.pqc.crypto.mceliece.McElieceCCA2PublicKeyParameters;
+import org.bouncycastle.pqc.crypto.util.PublicKeyFactory;
 import org.bouncycastle.pqc.math.linearalgebra.GF2Matrix;
 
 /**
@@ -23,13 +27,18 @@ public class BCMcElieceCCA2PublicKey
 {
     private static final long serialVersionUID = 1L;
 
-    private McElieceCCA2PublicKeyParameters params;
+    private transient McElieceCCA2PublicKeyParameters params;
 
     public BCMcElieceCCA2PublicKey(McElieceCCA2PublicKeyParameters params)
     {
         this.params = params;
     }
 
+    private void init(SubjectPublicKeyInfo publicKeyInfo)
+        throws IOException
+    {
+        this.params = (McElieceCCA2PublicKeyParameters)PublicKeyFactory.createKey(publicKeyInfo);
+    }
     /**
      * Return the name of the algorithm.
      *
@@ -125,7 +134,7 @@ public class BCMcElieceCCA2PublicKey
      */
     public byte[] getEncoded()
     {
-        McElieceCCA2PublicKey key = new McElieceCCA2PublicKey(params.getN(), params.getT(), params.getG(), Utils.getDigAlgId(params.getDigest()));
+        McElieceCCA2PublicKey key = new McElieceCCA2PublicKey(params.getN(), params.getT(), params.getG(), MessageDigestUtils.getDigestAlgID(params.getDigest()));
         AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(PQCObjectIdentifiers.mcElieceCca2);
 
         try
@@ -149,5 +158,25 @@ public class BCMcElieceCCA2PublicKey
     AsymmetricKeyParameter getKeyParams()
     {
         return params;
+    }
+
+    private void readObject(
+        ObjectInputStream in)
+        throws IOException, ClassNotFoundException
+    {
+        in.defaultReadObject();
+
+        byte[] enc = (byte[])in.readObject();
+
+        init(SubjectPublicKeyInfo.getInstance(enc));
+    }
+
+    private void writeObject(
+        ObjectOutputStream out)
+        throws IOException
+    {
+        out.defaultWriteObject();
+
+        out.writeObject(this.getEncoded());
     }
 }

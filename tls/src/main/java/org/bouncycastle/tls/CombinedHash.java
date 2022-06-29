@@ -1,5 +1,6 @@
 package org.bouncycastle.tls;
 
+import org.bouncycastle.tls.crypto.CryptoHashAlgorithm;
 import org.bouncycastle.tls.crypto.TlsCrypto;
 import org.bouncycastle.tls.crypto.TlsHash;
 import org.bouncycastle.util.Arrays;
@@ -26,16 +27,16 @@ public class CombinedHash
     public CombinedHash(TlsCrypto crypto)
     {
         this.crypto = crypto;
-        this.md5 = crypto.createHash(HashAlgorithm.md5);
-        this.sha1 = crypto.createHash(HashAlgorithm.sha1);
+        this.md5 = crypto.createHash(CryptoHashAlgorithm.md5);
+        this.sha1 = crypto.createHash(CryptoHashAlgorithm.sha1);
     }
 
     public CombinedHash(CombinedHash t)
     {
         this.context = t.context;
         this.crypto = t.crypto;
-        this.md5 = (TlsHash)t.md5.clone();
-        this.sha1 = (TlsHash)t.sha1.clone();
+        this.md5 = t.md5.cloneHash();
+        this.sha1 = t.sha1.cloneHash();
     }
 
     public void update(byte[] input, int inOff, int len)
@@ -54,7 +55,7 @@ public class CombinedHash
         return Arrays.concatenate(md5.calculateHash(), sha1.calculateHash());
     }
 
-    public Object clone()
+    public TlsHash cloneHash()
     {
         return new CombinedHash(this);
     }

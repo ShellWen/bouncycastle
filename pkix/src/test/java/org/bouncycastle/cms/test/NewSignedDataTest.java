@@ -24,7 +24,7 @@ import junit.framework.Assert;
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
-import org.bouncycastle.asn1.ASN1ApplicationSpecific;
+import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1Encoding;
 import org.bouncycastle.asn1.ASN1InputStream;
@@ -32,9 +32,14 @@ import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.ASN1Sequence;
+import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.ASN1Util;
+import org.bouncycastle.asn1.BERTags;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.DERSet;
+import org.bouncycastle.asn1.DLSequence;
 import org.bouncycastle.asn1.cms.Attribute;
 import org.bouncycastle.asn1.cms.AttributeTable;
 import org.bouncycastle.asn1.cms.CMSAttributes;
@@ -45,6 +50,7 @@ import org.bouncycastle.asn1.cms.SignerInfo;
 import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.ocsp.OCSPResponse;
+import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.teletrust.TeleTrusTObjectIdentifiers;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
@@ -913,7 +919,47 @@ public class NewSignedDataTest
         
         checkSignerStoreReplacement(s, signers);
     }
-    
+
+    public void testWithDefiniteLength()
+        throws Exception
+    {
+        List              certList = new ArrayList();
+        CMSTypedData      msg = new CMSProcessableByteArray("Hello world!".getBytes());
+
+        certList.add(_origCert);
+        certList.add(_signCert);
+
+        Store           certs = new JcaCertStore(certList);
+
+        CMSSignedDataGenerator gen = new CMSSignedDataGenerator();
+        ContentSigner sha1Signer = new JcaContentSignerBuilder("SHA1withRSA").setProvider(BC).build(_origKP.getPrivate());
+
+        JcaSignerInfoGeneratorBuilder builder = new JcaSignerInfoGeneratorBuilder(new JcaDigestCalculatorProviderBuilder().setProvider(BC).build());
+
+        builder.setDirectSignature(true);
+
+        gen.addSignerInfoGenerator(builder.build(sha1Signer, _origCert));
+
+        gen.addCertificates(certs);
+
+        gen.setDefiniteLengthEncoding(true);
+
+        CMSSignedData s = gen.generate(msg, false);
+
+        assertTrue(s.toASN1Structure().toASN1Primitive() instanceof DLSequence);
+
+        ASN1Encodable content = s.toASN1Structure().getContent();
+        assertTrue(content instanceof SignedData);
+        assertTrue(content.toASN1Primitive() instanceof DLSequence);
+        
+        //
+        // compute expected content digest
+        //
+        MessageDigest md = MessageDigest.getInstance("SHA1", BC);
+
+        verifySignatures(s, md.digest("Hello world!".getBytes()));
+    }
+
     public void testSHA1WithRSANoAttributes()
         throws Exception
     {
@@ -1315,6 +1361,8 @@ public class NewSignedDataTest
 
             SignerInformationVerifier verifier = new JcaSimpleSignerInfoVerifierBuilder().setProvider(BC).build(cert);
 
+            assertEquals(true, signer.verify(verifier));
+
             assertEquals(false, new MyWrongSignerInformation(signer).verify(verifier));
 
             MyRightSignerInformation rSigner = new MyRightSignerInformation(signer);
@@ -1542,6 +1590,72 @@ public class NewSignedDataTest
         rsaPSSTest("SHA3-384withRSAandMGF1");
     }
 
+    public void testSHA1WithRSADigest()
+        throws Exception
+    {
+        rsaDigestTest("SHA1withRSA");
+    }
+
+    public void testSHA224WithRSADigest()
+        throws Exception
+    {
+        rsaDigestTest("SHA224withRSA");
+    }
+
+    public void testSHA256WithRSADigest()
+        throws Exception
+    {
+        rsaDigestTest("SHA256withRSA");
+    }
+
+    public void testSHA384WithRSADigest()
+        throws Exception
+    {
+        rsaDigestTest("SHA384withRSA");
+    }
+
+    public void testSHA512WithRSADigest()
+        throws Exception
+    {
+        rsaDigestTest("SHA512withRSA");
+    }
+
+    public void testSHA3_224WithRSADigest()
+        throws Exception
+    {
+        rsaDigestTest("SHA3-224withRSA");
+    }
+
+    public void testSHA3_256WithRSADigest()
+        throws Exception
+    {
+        rsaDigestTest("SHA3-256withRSA");
+    }
+
+    public void testSHA3_384WithRSADigest()
+        throws Exception
+    {
+        rsaDigestTest("SHA3-384withRSA");
+    }
+
+    public void testSHA3_512WithRSADigest()
+        throws Exception
+    {
+        rsaDigestTest("SHA3-512withRSA");
+    }
+
+    public void testSHA512_224ithRSADigest()
+        throws Exception
+    {
+        rsaDigestTest("SHA512(224)withRSA");
+    }
+
+    public void testSHA512_256ithRSADigest()
+        throws Exception
+    {
+        rsaDigestTest("SHA512(256)withRSA");
+    }
+
     public void testEd25519()
         throws Exception
     {
@@ -1718,6 +1832,54 @@ public class NewSignedDataTest
         encapsulatedTest(_signEcDsaKP, _signEcDsaCert, "SHA3-512withECDSA");
     }
 
+    public void testPLAIN_ECDSASHA224Encapsulated()
+        throws Exception
+    {
+        encapsulatedTest(_signEcDsaKP, _signEcDsaCert, "SHA224withPLAIN-ECDSA");
+    }
+
+    public void testPLAIN_ECDSASHA256Encapsulated()
+        throws Exception
+    {
+        encapsulatedTest(_signEcDsaKP, _signEcDsaCert, "SHA256withPLAIN-ECDSA");
+    }
+
+    public void testPLAIN_ECDSASHA384Encapsulated()
+        throws Exception
+    {
+        encapsulatedTest(_signEcDsaKP, _signEcDsaCert, "SHA384withPLAIN-ECDSA");
+    }
+
+    public void testPLAIN_ECDSASHA512Encapsulated()
+        throws Exception
+    {
+        encapsulatedTest(_signEcDsaKP, _signEcDsaCert, "SHA512withPLAIN-ECDSA");
+    }
+
+    public void testPLAIN_ECDSASHA3_224Encapsulated()
+        throws Exception
+    {
+        encapsulatedTest(_signEcDsaKP, _signEcDsaCert, "SHA3-224withPLAIN-ECDSA");
+    }
+
+    public void testPLAIN_ECDSASHA3_256Encapsulated()
+        throws Exception
+    {
+        encapsulatedTest(_signEcDsaKP, _signEcDsaCert, "SHA3-256withPLAIN-ECDSA");
+    }
+
+    public void testPLAIN_ECDSASHA3_384Encapsulated()
+        throws Exception
+    {
+        encapsulatedTest(_signEcDsaKP, _signEcDsaCert, "SHA3-384withPLAIN-ECDSA");
+    }
+
+    public void testPLAIN_ECDSASHA3_512Encapsulated()
+        throws Exception
+    {
+        encapsulatedTest(_signEcDsaKP, _signEcDsaCert, "SHA3-512withPLAIN-ECDSA");
+    }
+
     public void testECDSASHA512EncapsulatedWithKeyFactoryAsEC()
         throws Exception
     {
@@ -1862,15 +2024,20 @@ public class NewSignedDataTest
             }
         };
 
+        Set digAlgs = s.getDigestAlgorithmIDs();
+
+        assertTrue(digAlgs.size() == 1);
+        assertTrue(digAlgs.contains(new AlgorithmIdentifier(OIWObjectIdentifiers.idSHA1, DERNull.INSTANCE)));
+
         assertTrue(s.verifySignatures(vProv));
 
         SignerInformation origSigner = (SignerInformation)s.getSignerInfos().getSigners().toArray()[0];
 
         gen = new CMSSignedDataGenerator();
 
-        sha1Signer = new JcaContentSignerBuilder("SHA1withRSA").setProvider(BC).build(_origKP.getPrivate());
+        ContentSigner sha256Signer = new JcaContentSignerBuilder("SHA256withRSA").setProvider(BC).build(_origKP.getPrivate());
 
-        gen.addSignerInfoGenerator(new JcaSignerInfoGeneratorBuilder(new JcaDigestCalculatorProviderBuilder().setProvider(BC).build()).build(sha1Signer, _origCert));
+        gen.addSignerInfoGenerator(new JcaSignerInfoGeneratorBuilder(new JcaDigestCalculatorProviderBuilder().setProvider(BC).build()).build(sha256Signer, _origCert));
 
         SignerInformationStore counterSigners = gen.generateCounterSigners(origSigner);
 
@@ -1907,8 +2074,70 @@ public class NewSignedDataTest
             }
         };
 
+        digAlgs = s.getDigestAlgorithmIDs();
+
+        assertTrue(digAlgs.size() == 2);
+        assertTrue(digAlgs.contains(new AlgorithmIdentifier(OIWObjectIdentifiers.idSHA1, DERNull.INSTANCE)));
+        assertTrue(digAlgs.contains(new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha256)));
+
         // verify sig and counter sig.
         assertTrue(s.verifySignatures(vProv, false));
+    }
+
+    public void testAddDigestAlgorithm()
+        throws Exception
+    {
+        List                certList = new ArrayList();
+        List                crlList = new ArrayList();
+        CMSTypedData        msg = new CMSProcessableByteArray("Hello World!".getBytes());
+
+        certList.add(_signCert);
+        certList.add(_origCert);
+
+        crlList.add(_signCrl);
+
+        Store           certStore = new JcaCertStore(certList);
+        Store           crlStore = new JcaCRLStore(crlList);
+
+        CMSSignedDataGenerator gen = new CMSSignedDataGenerator();
+
+        ContentSigner sha1Signer = new JcaContentSignerBuilder("SHA1withRSA").setProvider(BC).build(_signKP.getPrivate());
+
+        gen.addSignerInfoGenerator(new JcaSignerInfoGeneratorBuilder(new JcaDigestCalculatorProviderBuilder().setProvider(BC).build()).build(sha1Signer, _signCert));
+
+        gen.addCertificates(certStore);
+        gen.addCRLs(crlStore);
+
+        CMSSignedData s = gen.generate(msg, true);
+
+        SignerInformationVerifierProvider vProv = new SignerInformationVerifierProvider()
+        {
+            public SignerInformationVerifier get(SignerId signerId)
+                throws OperatorCreationException
+            {
+                return new JcaSimpleSignerInfoVerifierBuilder().setProvider(BC).build(_signCert);
+            }
+        };
+
+        Set digAlgs = s.getDigestAlgorithmIDs();
+
+        assertTrue(digAlgs.size() == 1);
+        assertTrue(digAlgs.contains(new AlgorithmIdentifier(OIWObjectIdentifiers.idSHA1, DERNull.INSTANCE)));
+
+        assertTrue(s.verifySignatures(vProv));
+
+        CMSSignedData oldS = s;
+        s = CMSSignedData.addDigestAlgorithm(s, new AlgorithmIdentifier(OIWObjectIdentifiers.idSHA1, DERNull.INSTANCE));
+
+        assertTrue(oldS == s);
+
+        s = CMSSignedData.addDigestAlgorithm(s, new AlgorithmIdentifier(TeleTrusTObjectIdentifiers.ripemd160, DERNull.INSTANCE));
+
+        assertTrue(oldS != s);
+
+        digAlgs = s.getDigestAlgorithmIDs();
+        assertTrue(digAlgs.size() == 2);
+        assertTrue(digAlgs.contains(new AlgorithmIdentifier(TeleTrusTObjectIdentifiers.ripemd160, DERNull.INSTANCE)));
     }
 
     private void rsaPSSTest(String signatureAlgorithmName)
@@ -1929,6 +2158,38 @@ public class NewSignedDataTest
         JcaSignerInfoGeneratorBuilder siBuilder = new JcaSignerInfoGeneratorBuilder(new JcaDigestCalculatorProviderBuilder().setProvider(BC).build());
 
         siBuilder.setDirectSignature(true);
+
+        gen.addSignerInfoGenerator(siBuilder.build(contentSigner, _origCert));
+
+        gen.addCertificates(certs);
+
+        CMSSignedData s = gen.generate(msg, false);
+
+        //
+        // compute expected content digest
+        //
+        String digestName = signatureAlgorithmName.substring(0, signatureAlgorithmName.indexOf('w'));
+        MessageDigest md = MessageDigest.getInstance(digestName, BC);
+
+        verifySignatures(s, md.digest("Hello world!".getBytes()));
+    }
+
+    private void rsaDigestTest(String signatureAlgorithmName)
+        throws Exception
+    {
+        List certList = new ArrayList();
+        CMSTypedData msg = new CMSProcessableByteArray("Hello world!".getBytes());
+
+        certList.add(_origCert);
+        certList.add(_signCert);
+
+        Store certs = new JcaCertStore(certList);
+
+        CMSSignedDataGenerator gen = new CMSSignedDataGenerator();
+
+        ContentSigner contentSigner = new JcaContentSignerBuilder(signatureAlgorithmName).setProvider(BC).build(_origKP.getPrivate());
+
+        JcaSignerInfoGeneratorBuilder siBuilder = new JcaSignerInfoGeneratorBuilder(new JcaDigestCalculatorProviderBuilder().setProvider(BC).build());
 
         gen.addSignerInfoGenerator(siBuilder.build(contentSigner, _origCert));
 
@@ -2794,9 +3055,12 @@ public class NewSignedDataTest
     public void testMixed()
         throws Exception
     {
-        ASN1ApplicationSpecific derApplicationSpecific = (ASN1ApplicationSpecific)ASN1Primitive.fromByteArray(mixedSignedData);
+        ASN1TaggedObject appTag = ASN1TaggedObject.getInstance(mixedSignedData);
+        assertTrue(appTag.hasTag(BERTags.APPLICATION, 23));
+        assertNotNull(ASN1Util.tryGetBaseUniversal(appTag, BERTags.APPLICATION, 23, true, BERTags.SEQUENCE));
 
-        CMSSignedData s = new CMSSignedData(new ByteArrayInputStream(derApplicationSpecific.getContents()));
+        ASN1Sequence seq = (ASN1Sequence)appTag.getBaseUniversal(true, BERTags.SEQUENCE);
+        CMSSignedData s = new CMSSignedData(ContentInfo.getInstance(seq));
 
         Store certs = s.getCertificates();
 

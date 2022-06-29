@@ -8,7 +8,7 @@
     <property name="jdk.name" value="jdk1.5" />
     <property name="artifacts.dir" value="${build.dir}/artifacts/${jdk.name}" />
     <property name="src.dir" value="${build.dir}/${jdk.name}" />
-    <property name="target.prefix" value="jdk15on" />
+    <property name="target.prefix" value="jdk15to18" />
     <property name="javadoc.args" value="-breakiterator" />
 
     <target name="clean">
@@ -26,6 +26,7 @@
         <copy todir="${src.dir}">
             <fileset dir="core/src/main/java" includes="**/*.java" />
             <fileset dir="core/src/main/java" includes="**/*.properties" />
+            <fileset dir="core/src/main/resources" includes="**/*.properties" />
             <fileset dir="core/src/main/javadoc" includes="**/*.html" />
             <fileset dir="core/src/test/java" includes="**/*.java" />
             <fileset dir="core/src/test/javadoc" includes="**/*.html" />
@@ -44,6 +45,7 @@
             <fileset dir="tls/src/test/resources" includes="**/*.*" />
 
             <fileset dir="pkix/src/main/java" includes="**/*.java" />
+            <fileset dir="pkix/src/main/jdk1.5" includes="**/*.java" />
             <fileset dir="pkix/src/main/javadoc" includes="**/*.html" />
             <fileset dir="pkix/src/main/java" includes="**/*.properties" />
             <fileset dir="pkix/src/test/java" includes="**/*.java" />
@@ -55,6 +57,12 @@
             <fileset dir="pg/src/main/java" includes="**/*.properties" />
             <fileset dir="pg/src/test/java" includes="**/*.java" />
             <fileset dir="pg/src/test/resources" includes="**/*.*" />
+
+            <fileset dir="util/src/main/java" includes="**/*.java" />
+            <fileset dir="util/src/main/javadoc" includes="**/*.html" />
+            <fileset dir="util/src/main/java" includes="**/*.properties" />
+            <fileset dir="util/src/test/java" includes="**/*.java" />
+            <fileset dir="util/src/test/resources" includes="**/*.*" />
 
             <fileset dir="mail/src/main/java" includes="**/*.java" />
             <fileset dir="mail/src/main/javadoc" includes="**/*.html" />
@@ -94,8 +102,10 @@
     </target>
     
     <target name="build" depends="init">
+        <ant antfile="ant/bc+-build.xml" dir="." target="build-util" />
         <ant antfile="ant/bc+-build.xml" dir="." target="build-tls" />
         <ant antfile="ant/bc+-build.xml" dir="." />
+        <ant antfile="ant/bc+-build.xml" dir="." target="build-jmail" />
         <ant antfile="ant/bc+-build.xml" dir="." target="javadoc-lw" />
         <ant antfile="ant/bc+-build.xml" dir="." target="javadoc-libraries" />
         <ant antfile="ant/bc+-build.xml" dir="." target="javadoc-tls" />

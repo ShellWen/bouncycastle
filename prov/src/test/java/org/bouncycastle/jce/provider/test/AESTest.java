@@ -18,7 +18,9 @@ import javax.crypto.spec.SecretKeySpec;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.crypto.prng.FixedSecureRandom;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.encoders.Hex;
+import org.bouncycastle.util.test.TestRandomData;
 
 /**
  * basic test class for the AES cipher vectors from FIPS-197
@@ -315,6 +317,93 @@ public class AESTest
         {
             isTrue("wrong message", e.getMessage().equals("cannot reuse nonce for GCM encryption"));
         }
+
+        //
+        // GCM-SIV
+        //
+        key = new SecretKeySpec(Hex.decode("01000000000000000000000000000000"), "AES");
+        N = Hex.decode("030000000000000000000000");
+        P = Hex.decode("01000000000000000000000000000000" + "02000000000000000000000000000000"
+                        + "03000000000000000000000000000000" + "04000000000000000000000000000000");
+        C  = Hex.decode("2433668f1058190f6d43e360f4f35cd8" + "e475127cfca7028ea8ab5c20f7ab2af0"
+                + "2516a2bdcbc08d521be37ff28c152bba" + "36697f25b4cd169c6590d1dd39566d3f"
+                + "8a263dd317aa88d56bdf3936dba75bb8");
+
+        in = Cipher.getInstance("AES/GCM-SIV/NoPadding", "BC");
+        out = Cipher.getInstance("AES/GCM-SIV/NoPadding", "BC");
+
+        in.init(Cipher.ENCRYPT_MODE, key, new IvParameterSpec(N));
+
+        enc = in.doFinal(P);
+        if (!areEqual(enc, C))
+        {
+            fail("ciphertext doesn't match in GCM-SIV");
+        }
+
+        out.init(Cipher.DECRYPT_MODE, key, new IvParameterSpec(N));
+
+        dec = out.doFinal(C);
+        if (!areEqual(dec, P))
+        {
+            fail("plaintext doesn't match in GCM-SIV");
+        }
+
+        try
+        {
+            in = Cipher.getInstance("AES/GCM-SIV/PKCS5Padding", "BC");
+
+            fail("bad padding missed in GCM");
+        }
+        catch (NoSuchPaddingException e)
+        {
+            // expected
+        }
+
+    }
+
+    private void gcmTestWithRandom()
+        throws Exception
+    {
+        byte[] K = Hex.decode(
+            "feffe9928665731c6d6a8f9467308308"
+                + "feffe9928665731c6d6a8f9467308308");
+        byte[] P = Hex.decode(
+            "d9313225f88406e5a55909c5aff5269a"
+                + "86a7a9531534f7da2e4c303d8a318a72"
+                + "1c3c0c95956809532fcf0e2449a6b525"
+                + "b16aedf5aa0de657ba637b391aafd255");
+
+        Key key;
+        Cipher in, out;
+
+        key = new SecretKeySpec(K, "AES");
+
+        in = Cipher.getInstance("AES/GCM/NoPadding", "BC");
+        out = Cipher.getInstance("AES/GCM/NoPadding", "BC");
+
+        in.init(Cipher.ENCRYPT_MODE, key, new TestRandomData("d0effdb2ec15369ff27a02bff3f800ef"));
+
+        byte[] enc = in.doFinal(P);
+
+        isTrue(Arrays.areEqual(Hex.decode("d0effdb2ec15369ff27a02bf"), in.getIV()));
+
+        isEquals(12, in.getIV().length);
+
+        out.init(Cipher.DECRYPT_MODE, key, new IvParameterSpec(in.getIV()));
+
+        byte[] dec = out.doFinal(enc);
+        isTrue("plaintext doesn't match in GCM", Arrays.areEqual(P, dec));
+
+        try
+        {
+            in = Cipher.getInstance("AES/GCM/PKCS5Padding", "BC");
+
+            fail("bad padding missed in GCM");
+        }
+        catch (NoSuchPaddingException e)
+        {
+            // expected
+        }
     }
 
     private void ocbTest()
@@ -446,6 +535,7 @@ public class AESTest
         eaxTest();
         ccmTest();
         gcmTest();
+        gcmTestWithRandom();
         ocbTest();
     }
 

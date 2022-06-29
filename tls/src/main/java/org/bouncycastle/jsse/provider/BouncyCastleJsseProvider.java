@@ -1,10 +1,13 @@
 package org.bouncycastle.jsse.provider;
 
+import java.security.AccessController;
 import java.security.GeneralSecurityException;
 import java.security.NoSuchAlgorithmException;
+import java.security.PrivilegedAction;
 import java.security.Provider;
 import java.security.Security;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -20,8 +23,10 @@ public class BouncyCastleJsseProvider
 {
     public static final String PROVIDER_NAME = "BCJSSE";
 
-    private static final double PROVIDER_VERSION = 1.0011;
-    private static final String PROVIDER_INFO = "Bouncy Castle JSSE Provider Version 1.0.11";
+    private static final String JSSE_CONFIG_PROPERTY = "org.bouncycastle.jsse.config";
+
+    private static final double PROVIDER_VERSION = 1.0014;
+    private static final String PROVIDER_INFO = "Bouncy Castle JSSE Provider Version 1.0.14";
 
     private Map<String, BcJsseService> serviceMap = new HashMap<String, BcJsseService>();
     private Map<String, EngineCreator> creatorMap = new HashMap<String, EngineCreator>();
@@ -30,7 +35,7 @@ public class BouncyCastleJsseProvider
 
     public BouncyCastleJsseProvider()
     {
-        this(false);
+        this(getPropertyValue(JSSE_CONFIG_PROPERTY, "default"));
     }
 
     public BouncyCastleJsseProvider(boolean fipsMode)
@@ -180,7 +185,7 @@ public class BouncyCastleJsseProvider
             {
                 public Object createInstance(Object constructorParameter)
                 {
-                    return new ProvSSLContextSpi(fipsMode, cryptoProvider, new String[]{ "TLSv1" });
+                    return new ProvSSLContextSpi(fipsMode, cryptoProvider, specifyClientProtocols("TLSv1"));
                 }
             });
         addAlgorithmImplementation("SSLContext.TLSV1.1", "org.bouncycastle.jsse.provider.SSLContext.TLSv1_1",
@@ -188,7 +193,7 @@ public class BouncyCastleJsseProvider
             {
                 public Object createInstance(Object constructorParameter)
                 {
-                    return new ProvSSLContextSpi(fipsMode, cryptoProvider, new String[]{ "TLSv1.1", "TLSv1" });
+                    return new ProvSSLContextSpi(fipsMode, cryptoProvider, specifyClientProtocols("TLSv1.1", "TLSv1"));
                 }
             });
         addAlgorithmImplementation("SSLContext.TLSV1.2", "org.bouncycastle.jsse.provider.SSLContext.TLSv1_2",
@@ -197,7 +202,7 @@ public class BouncyCastleJsseProvider
                 public Object createInstance(Object constructorParameter)
                 {
                     return new ProvSSLContextSpi(fipsMode, cryptoProvider,
-                        new String[]{ "TLSv1.2", "TLSv1.1", "TLSv1" });
+                        specifyClientProtocols("TLSv1.2", "TLSv1.1", "TLSv1"));
                 }
             });
         addAlgorithmImplementation("SSLContext.TLSV1.3", "org.bouncycastle.jsse.provider.SSLContext.TLSv1_3",
@@ -206,7 +211,7 @@ public class BouncyCastleJsseProvider
                 public Object createInstance(Object constructorParameter)
                 {
                     return new ProvSSLContextSpi(fipsMode, cryptoProvider,
-                        new String[]{ "TLSv1.3", "TLSv1.2", "TLSv1.1", "TLSv1" });
+                        specifyClientProtocols("TLSv1.3", "TLSv1.2", "TLSv1.1", "TLSv1"));
                 }
             });
         addAlgorithmImplementation("SSLContext.DEFAULT", "org.bouncycastle.jsse.provider.SSLContext.Default",
@@ -337,6 +342,11 @@ public class BouncyCastleJsseProvider
         return attributeMap;
     }
 
+    private static List<String> specifyClientProtocols(String... protocols)
+    {
+        return Arrays.asList(protocols);
+    }
+
     public boolean isFipsMode()
     {
         return isInFipsMode;
@@ -389,5 +399,27 @@ public class BouncyCastleJsseProvider
                 throw new NoSuchAlgorithmException("Unable to invoke creator for " + getAlgorithm() + ": " + e.getMessage(), e);
             }
         }
+    }
+
+    // added here as not present in FIPS yet.
+    private static String getPropertyValue(final String propertyName, final String defValue)
+    {
+        return AccessController.doPrivileged(new PrivilegedAction<String>()
+        {
+            public String run()
+            {
+                String v = Security.getProperty(propertyName);
+                if (v != null)
+                {
+                    return v;
+                }
+                v = System.getProperty(propertyName);
+                if (v != null)
+                {
+                    return v;
+                }
+                return defValue;
+            }
+        });
     }
 }

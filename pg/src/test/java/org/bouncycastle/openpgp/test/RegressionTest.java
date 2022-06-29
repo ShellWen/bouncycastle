@@ -21,6 +21,7 @@ public class RegressionTest
         new PGPMarkerTest(),
         new PGPPacketTest(),
         new PGPArmoredTest(),
+        new PGPSignatureInvalidVersionIgnoredTest(),
         new PGPSignatureTest(),
         new PGPClearSignedSignatureTest(),
         new PGPCompressionTest(),
@@ -30,9 +31,21 @@ public class RegressionTest
         new PGPECMessageTest(),
         new PGPParsingTest(),
         new PGPEdDSATest(),
+        new PGPPublicKeyMergeTest(),
         new SExprTest(),
         new ArmoredInputStreamTest(),
-        new PGPUtilTest()
+        new PGPUtilTest(),
+        new BcPGPEd25519JcaKeyPairConversionTest(),
+        new RewindStreamWhenDecryptingMultiSKESKMessageTest(),
+        new PGPFeaturesTest(),
+        new ArmoredInputStreamBackslashTRVFTest(),
+        new ArmoredInputStreamCRCErrorGetsThrownTest(),
+        new ArmoredInputStreamIngoreMissingCRCSum(),
+        new PGPSessionKeyTest(),
+        new PGPCanonicalizedDataGeneratorTest(),
+        new RegexTest(),
+        new PolicyURITest(),
+        new ArmoredOutputStreamUTF8Test()
     };
 
     public static void main(String[] args)

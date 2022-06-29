@@ -13,6 +13,7 @@ public final class ProtocolVersion
     public static final ProtocolVersion TLSv13 = new ProtocolVersion(0x0304, "TLS 1.3");
     public static final ProtocolVersion DTLSv10 = new ProtocolVersion(0xFEFF, "DTLS 1.0");
     public static final ProtocolVersion DTLSv12 = new ProtocolVersion(0xFEFD, "DTLS 1.2");
+    public static final ProtocolVersion DTLSv13 = new ProtocolVersion(0xFEFC, "DTLS 1.3");
 
     static final ProtocolVersion CLIENT_EARLIEST_SUPPORTED_DTLS = DTLSv10;
     static final ProtocolVersion CLIENT_EARLIEST_SUPPORTED_TLS = SSLv3;
@@ -232,15 +233,22 @@ public final class ProtocolVersion
     {
         switch (getMajorVersion())
         {
-        case 0x03:  return this;
+        case 0x03:
+            return this;
         case 0xFE:
             switch(getMinorVersion())
             {
-            case 0xFF:  return TLSv11;
-            case 0xFD:  return TLSv12;
-            default:    return null;
+            case 0xFF:
+                return TLSv11;
+            case 0xFD:
+                return TLSv12;
+            case 0xFC:
+                return TLSv13;
+            default:
+                return null;
             }
-        default:    return null;
+        default:
+            return null;
         }
     }
 
@@ -252,17 +260,23 @@ public final class ProtocolVersion
         case 0x03:
             switch (minor)
             {
-            case 0xFF: return null;
-            default  : return get(major, minor + 1);
+            case 0xFF:
+                return null;
+            default:
+                return get(major, minor + 1);
             }
         case 0xFE:
             switch(minor)
             {
-            case 0x00: return null;
-            case 0xFF: return DTLSv12;
-            default  : return get(major, minor - 1);
+            case 0x00:
+                return null;
+            case 0xFF:
+                return DTLSv12;
+            default:
+                return get(major, minor - 1);
             }
-        default:    return null;
+        default:
+            return null;
         }
     }
 
@@ -274,17 +288,23 @@ public final class ProtocolVersion
         case 0x03:
             switch (minor)
             {
-            case 0x00: return null;
-            default  : return get(major, minor - 1);
+            case 0x00:
+                return null;
+            default:
+                return get(major, minor - 1);
             }
         case 0xFE:
             switch(minor)
             {
-            case 0xFF: return null;
-            case 0xFD: return DTLSv10;
-            default  : return get(major, minor + 1);
+            case 0xFF:
+                return null;
+            case 0xFD:
+                return DTLSv10;
+            default:
+                return get(major, minor + 1);
             }
-        default:    return null;
+        default:
+            return null;
         }
     }
 
@@ -374,6 +394,8 @@ public final class ProtocolVersion
                 throw new IllegalArgumentException("{0xFE, 0xFE} is a reserved protocol version");
             case 0xFD:
                 return DTLSv12;
+            case 0xFC:
+                return DTLSv13;
             }
             return getUnknownVersion(major, minor, "DTLS");
         }

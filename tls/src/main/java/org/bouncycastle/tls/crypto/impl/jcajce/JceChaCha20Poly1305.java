@@ -19,7 +19,6 @@ import org.bouncycastle.util.Pack;
 
 public class JceChaCha20Poly1305 implements TlsAEADCipherImpl
 {
-    private static final int BUF_SIZE = 32 * 1024;
     private static final byte[] ZEROES = new byte[15];
 
     protected final Cipher cipher;
@@ -36,8 +35,8 @@ public class JceChaCha20Poly1305 implements TlsAEADCipherImpl
         this.cipherMode = isEncrypting ? Cipher.ENCRYPT_MODE : Cipher.DECRYPT_MODE;
     }
 
-    public int doFinal(byte[] input, int inputOffset, int inputLength, byte[] extraInput, byte[] output,
-        int outputOffset) throws IOException
+    public int doFinal(byte[] input, int inputOffset, int inputLength, byte[] output, int outputOffset)
+        throws IOException
     {
         /*
          * NOTE: When using the Cipher class, output may be buffered prior to calling doFinal, so
@@ -48,15 +47,12 @@ public class JceChaCha20Poly1305 implements TlsAEADCipherImpl
          */
         try
         {
-            int extraInputLength = extraInput.length;
-
             if (cipherMode == Cipher.ENCRYPT_MODE)
             {
-                int ciphertextLength = inputLength + extraInputLength;
+                int ciphertextLength = inputLength;
 
                 byte[] tmp = new byte[64 + ciphertextLength];
                 System.arraycopy(input, inputOffset, tmp, 64, inputLength);
-                System.arraycopy(extraInput, 0, tmp, 64 + inputLength, extraInputLength);
 
                 runCipher(tmp);
 
@@ -77,11 +73,6 @@ public class JceChaCha20Poly1305 implements TlsAEADCipherImpl
             }
             else
             {
-                if (extraInputLength > 0)
-                {
-                    throw new TlsFatalAlert(AlertDescription.internal_error);
-                }
-
                 int ciphertextLength = inputLength - 16;
 
                 byte[] tmp = new byte[64 + ciphertextLength];
@@ -131,7 +122,7 @@ public class JceChaCha20Poly1305 implements TlsAEADCipherImpl
 
         try
         {
-            cipher.init(cipherMode, cipherKey, new IvParameterSpec(nonce));
+            cipher.init(cipherMode, cipherKey, new IvParameterSpec(nonce), null);
         }
         catch (GeneralSecurityException e)
         {
@@ -158,18 +149,7 @@ public class JceChaCha20Poly1305 implements TlsAEADCipherImpl
 
     protected void runCipher(byte[] buf) throws GeneralSecurityException
     {
-        // to avoid performance issue in FIPS jar 1.0.0-1.0.2, process in chunks
-        int readOff = 0, writeOff = 0;
-        while (readOff < buf.length)
-        {
-            int updateSize = Math.min(BUF_SIZE, buf.length - readOff);
-            writeOff += cipher.update(buf, readOff, updateSize, buf, writeOff);
-            readOff += updateSize;
-        }
-
-        writeOff += cipher.doFinal(buf, writeOff);
-
-        if (buf.length != writeOff)
+        if (buf.length != cipher.doFinal(buf, 0, buf.length, buf, 0))
         {
             throw new IllegalStateException();
         }

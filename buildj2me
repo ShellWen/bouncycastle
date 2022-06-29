@@ -32,6 +32,8 @@ then
     ((cd core/src/main/j2me; tar cf - * ) | (cd $target/src && tar xf -))
     ((cd core/src/test/java; tar cf - * ) | (cd $target/src && tar xf -))
     ((cd core/src/test/j2me; tar cf - * ) | (cd $target/src && tar xf -))
+    ((cd util/src/main/java; tar cf - * ) | (cd $target/src && tar xf -))
+    ((cd util/src/main/j2me; tar cf - * ) | (cd $target/src && tar xf -))
     ((cd pkix/src/main/java; tar cf - * ) | (cd $target/src && tar xf -))
     ((cd pkix/src/main/javadoc; tar cf - * ) | (cd $target/src && tar xf -))
     ((cd pkix/src/main/j2me; tar cf - * ) | (cd $target/src && tar xf -))
@@ -40,12 +42,14 @@ then
     ((cd pg/src/main/java; tar cf - * ) | (cd $target/src && tar xf -))
     ((cd pg/src/main/javadoc; tar cf - * ) | (cd $target/src && tar xf -))
     ((cd pg/src/main/j2me; tar cf - * ) | (cd $target/src && tar xf -))
+    ((cd pg/src/test/j2me; tar cf - * ) | (cd $target/src && tar xf -))
 
     (cd $target;
         rm src/org/bouncycastle/crypto/test/AllTests.java
         rm src/org/bouncycastle/crypto/test/SHA3DigestTest.java
         rm src/org/bouncycastle/crypto/test/SHAKEDigestTest.java
 	rm src/org/bouncycastle/crypto/test/NISTECCTest.java
+	rm src/org/bouncycastle/crypto/test/LEATest.java
         rm src/org/bouncycastle/crypto/CryptoServicesPermission.java
         rm src/org/bouncycastle/util/StreamParser.java
         rm src/org/bouncycastle/util/StreamParsingException.java
@@ -73,7 +77,9 @@ then
         rm src/org/bouncycastle/asn1/test/RevokeRequestTest.java
 	rm src/org/bouncycastle/asn1/test/LocaleTest.java
 	rm src/org/bouncycastle/tsp/DataGroup.java
+	rm -rf src/org/bouncycastle/tsp/ers
 	rm src/org/bouncycastle/crypto/util/JournaledAlgorithm.java
+	rm -rf src/org/bouncycastle/crypto/fpe/
         rm -rf src/org/bouncycastle/math/ec/rfc7748/test
         rm -rf src/org/bouncycastle/math/ec/rfc8032/test
         rm -rf src/org/bouncycastle/math/raw/test
@@ -83,6 +89,7 @@ then
         rm -rf src/org/bouncycastle/pqc/crypto/*/NTRU*
         rm -rf src/org/bouncycastle/pqc/crypto/*/BitStringTest*
         rm -rf src/org/bouncycastle/pqc/crypto/*/IndexGenerator*
+        rm -rf src/org/bouncycastle/pqc/crypto/sphincsplus
         rm -rf src/org/bouncycastle/pqc/crypto/xmss
         rm -rf src/org/bouncycastle/pqc/crypto/lms
         rm -rf src/org/bouncycastle/pqc/crypto/test/XMSS*
@@ -113,6 +120,11 @@ then
         rm src/org/bouncycastle/crypto/test/GCMReorderTest.java
         rm src/org/bouncycastle/crypto/test/HCFamilyVecTest.java
         rm src/org/bouncycastle/crypto/test/RSABlindedTest.java
+        rm src/org/bouncycastle/crypto/test/SP80038GTest.java
+        rm src/org/bouncycastle/crypto/digests/Blake3Digest.java
+        rm src/org/bouncycastle/crypto/macs/Blake3Mac.java
+        rm src/org/bouncycastle/crypto/test/Blake3*.java
+        rm src/org/bouncycastle/crypto/params/Blake3*.java
         find src -name AllTests.java -exec rm {} \;
         find src -name jcajce -exec rm -r {} \;
         rm src/org/bouncycastle/asn1/test/GetInstanceTest.java
@@ -146,6 +158,7 @@ then
         rm -r src/org/bouncycastle/util/utiltest
         rm -r src/org/bouncycastle/openpgp/examples
         rm src/org/bouncycastle/openpgp/PGPCompressed*
+        rm src/org/bouncycastle/openpgp/PGPCanonicalizedDataGenerator*
         rm -r src/org/bouncycastle/util/encoders/test
         rm -r src/org/bouncycastle/util/io/test
         rm src/org/bouncycastle/cms/CMSProcessableFile.java
@@ -157,7 +170,80 @@ then
         rm -r src/org/bouncycastle/apache
         rm -r src/org/bouncycastle/voms
         rm -r src/org/bouncycastle/math/ec/tools
+        rm src/org/bouncycastle/cert/test/ExternalKeyTest.java
         rm src/org/bouncycastle/mozilla/SignedPublicKeyAndChallenge.java
+
+        for i in src/org/bouncycastle/pqc/crypto/*/*.java
+        do
+            ed $i <<%%
+g/ .Override/d
+w
+q
+%%
+        done
+
+        ed src/org/bouncycastle/cms/CMSSignedDataGenerator.java <<%
+g/LinkedHashSet/s//HashSet/g
+w
+q
+%
+        ed src/org/bouncycastle/openpgp/PGPEncryptedData.java <<%
+g/new UnsupportedOperationException/s//new RuntimeException/g
+w
+q
+%
+        ed src/org/bouncycastle/openpgp/operator/bc/BcPGPDataEncryptorBuilder.java <<%
+g/public BcPGPDataEncryptorBuilder setWi/s//public PGPDataEncryptorBuilder setWi/g
+w
+q
+%
+        ed src/org/bouncycastle/gpg/SExpression.java <<%
+g/\.\.\. /s//[]/g
+w
+q
+%
+
+	ed src/org/bouncycastle/cms/CMSAuthEnvelopedDataGenerator.java <<%
+g/java.util.Collections/s//java.util.HashMap/
+g/Collections.EMPTY_MAP/s//new HashMap()/
+w
+q
+%
+
+	ed src/org/bouncycastle/cms/CMSAuthenticatedDataStreamGenerator.java <<%
+g/java.util.Collections/s/$/ import java.util.HashMap;/
+g/Collections.EMPTY_MAP/s//new HashMap()/
+w
+q
+%
+
+	ed src/org/bouncycastle/cms/CMSAuthenticatedDataGenerator.java <<%
+g/java.util.Collections/s/$/ import java.util.HashMap;/
+g/Collections.EMPTY_MAP/s//new HashMap()/
+w
+q
+%
+
+	ed src/org/bouncycastle/cms/CMSEnvelopedDataStreamGenerator.java <<%
+g/java.util.Collections/s//java.util.HashMap/
+g/Collections.EMPTY_MAP/s//new HashMap()/
+w
+q
+%
+
+	ed src/org/bouncycastle/cms/CMSEnvelopedDataGenerator.java <<%
+g/java.util.Collections/s//java.util.HashMap/
+g/Collections.EMPTY_MAP/s//new HashMap()/
+w
+q
+%
+
+	ed src/org/bouncycastle/cms/CMSEncryptedDataGenerator.java <<%
+g/java.util.Collections/s//java.util.HashMap/
+g/Collections.EMPTY_MAP/s//new HashMap()/
+w
+q
+%
     )
 
     find $target/src -name "*.java" -exec scripts/trim.sh \{\} \;

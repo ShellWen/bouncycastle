@@ -1,0 +1,14 @@
+
+stages:
+  - check
+  - test
+
+check-code:
+  stage: check
+  script:
+    - ". ~/envs/bc-java.sh; \ gradle check -x test;"
+
+test-code:
+  stage: test
+  script:
+    - ". ~/envs/bc-java.sh; \ gradle -stacktrace clean build;"

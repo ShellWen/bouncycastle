@@ -4,11 +4,14 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.bc.BCObjectIdentifiers;
 import org.bouncycastle.asn1.bsi.BSIObjectIdentifiers;
+import org.bouncycastle.asn1.cms.CMSObjectIdentifiers;
 import org.bouncycastle.asn1.cryptopro.CryptoProObjectIdentifiers;
 import org.bouncycastle.asn1.eac.EACObjectIdentifiers;
 import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
 import org.bouncycastle.asn1.gm.GMObjectIdentifiers;
+import org.bouncycastle.asn1.misc.MiscObjectIdentifiers;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
@@ -61,6 +64,14 @@ public class DefaultCMSSignatureAlgorithmNameGenerator
         addEntries(PKCSObjectIdentifiers.sha256WithRSAEncryption, "SHA256", "RSA");
         addEntries(PKCSObjectIdentifiers.sha384WithRSAEncryption, "SHA384", "RSA");
         addEntries(PKCSObjectIdentifiers.sha512WithRSAEncryption, "SHA512", "RSA");
+        addEntries(PKCSObjectIdentifiers.sha512_224WithRSAEncryption, "SHA512(224)", "RSA");
+        addEntries(PKCSObjectIdentifiers.sha512_256WithRSAEncryption, "SHA512(256)", "RSA");
+        addEntries(NISTObjectIdentifiers.id_rsassa_pkcs1_v1_5_with_sha3_224, "SHA3-224", "RSA");
+        addEntries(NISTObjectIdentifiers.id_rsassa_pkcs1_v1_5_with_sha3_256, "SHA3-256", "RSA");
+        addEntries(NISTObjectIdentifiers.id_rsassa_pkcs1_v1_5_with_sha3_384, "SHA3-384", "RSA");
+        addEntries(NISTObjectIdentifiers.id_rsassa_pkcs1_v1_5_with_sha3_512, "SHA3-512", "RSA");
+        addEntries(CMSObjectIdentifiers.id_RSASSA_PSS_SHAKE128, "SHAKE128", "RSAPSS");
+        addEntries(CMSObjectIdentifiers.id_RSASSA_PSS_SHAKE256, "SHAKE256", "RSAPSS");
 
         addEntries(TeleTrusTObjectIdentifiers.rsaSignatureWithripemd128, "RIPEMD128", "RSA");
         addEntries(TeleTrusTObjectIdentifiers.rsaSignatureWithripemd160, "RIPEMD160", "RSA");
@@ -71,6 +82,8 @@ public class DefaultCMSSignatureAlgorithmNameGenerator
         addEntries(X9ObjectIdentifiers.ecdsa_with_SHA256, "SHA256", "ECDSA");
         addEntries(X9ObjectIdentifiers.ecdsa_with_SHA384, "SHA384", "ECDSA");
         addEntries(X9ObjectIdentifiers.ecdsa_with_SHA512, "SHA512", "ECDSA");
+        addEntries(CMSObjectIdentifiers.id_ecdsa_with_shake128, "SHAKE128", "ECDSA");
+        addEntries(CMSObjectIdentifiers.id_ecdsa_with_shake256, "SHAKE256", "ECDSA");
         addEntries(X9ObjectIdentifiers.id_dsa_with_sha1, "SHA1", "DSA");
         addEntries(EACObjectIdentifiers.id_TA_ECDSA_SHA_1, "SHA1", "ECDSA");
         addEntries(EACObjectIdentifiers.id_TA_ECDSA_SHA_224, "SHA224", "ECDSA");
@@ -87,6 +100,10 @@ public class DefaultCMSSignatureAlgorithmNameGenerator
         addEntries(BSIObjectIdentifiers.ecdsa_plain_SHA384, "SHA384", "PLAIN-ECDSA");
         addEntries(BSIObjectIdentifiers.ecdsa_plain_SHA512, "SHA512", "PLAIN-ECDSA");
         addEntries(BSIObjectIdentifiers.ecdsa_plain_RIPEMD160, "RIPEMD160", "PLAIN-ECDSA");
+        addEntries(BSIObjectIdentifiers.ecdsa_plain_SHA3_224, "SHA3-224", "PLAIN-ECDSA");
+        addEntries(BSIObjectIdentifiers.ecdsa_plain_SHA3_256, "SHA3-256", "PLAIN-ECDSA");
+        addEntries(BSIObjectIdentifiers.ecdsa_plain_SHA3_384, "SHA3-384", "PLAIN-ECDSA");
+        addEntries(BSIObjectIdentifiers.ecdsa_plain_SHA3_512, "SHA3-512", "PLAIN-ECDSA");
 
 //        addEntries(GMObjectIdentifiers.sm2sign_with_rmd160, "RIPEMD160", "SM2");
 //        addEntries(GMObjectIdentifiers.sm2sign_with_sha1, "SHA1", "SM2");
@@ -95,6 +112,9 @@ public class DefaultCMSSignatureAlgorithmNameGenerator
 //        addEntries(GMObjectIdentifiers.sm2sign_with_sha384, "SHA384", "SM2");
 //        addEntries(GMObjectIdentifiers.sm2sign_with_sha512, "SHA512", "SM2");
         addEntries(GMObjectIdentifiers.sm2sign_with_sm3, "SM3", "SM2");
+
+        addEntries(BCObjectIdentifiers.sphincs256_with_SHA512, "SHA512", "SPHINCS256");
+        addEntries(BCObjectIdentifiers.sphincs256_with_SHA3_512, "SHA3-512", "SPHINCS256");
 
         encryptionAlgs.put(X9ObjectIdentifiers.id_dsa, "DSA");
         encryptionAlgs.put(PKCSObjectIdentifiers.rsaEncryption, "RSA");
@@ -120,6 +140,10 @@ public class DefaultCMSSignatureAlgorithmNameGenerator
         digestAlgs.put(NISTObjectIdentifiers.id_sha256, "SHA256");
         digestAlgs.put(NISTObjectIdentifiers.id_sha384, "SHA384");
         digestAlgs.put(NISTObjectIdentifiers.id_sha512, "SHA512");
+        digestAlgs.put(NISTObjectIdentifiers.id_sha512_224, "SHA512(224)");
+        digestAlgs.put(NISTObjectIdentifiers.id_sha512_256, "SHA512(256)");
+        digestAlgs.put(NISTObjectIdentifiers.id_shake128, "SHAKE128");
+        digestAlgs.put(NISTObjectIdentifiers.id_shake256, "SHAKE256");
         digestAlgs.put(NISTObjectIdentifiers.id_sha3_224, "SHA3-224");
         digestAlgs.put(NISTObjectIdentifiers.id_sha3_256, "SHA3-256");
         digestAlgs.put(NISTObjectIdentifiers.id_sha3_384, "SHA3-384");
@@ -195,22 +219,35 @@ public class DefaultCMSSignatureAlgorithmNameGenerator
 
     public String getSignatureName(AlgorithmIdentifier digestAlg, AlgorithmIdentifier encryptionAlg)
     {
-        if (EdECObjectIdentifiers.id_Ed25519.equals(encryptionAlg.getAlgorithm()))
+        ASN1ObjectIdentifier encryptionAlgOID = encryptionAlg.getAlgorithm();
+        if (EdECObjectIdentifiers.id_Ed25519.equals(encryptionAlgOID))
         {
             return "Ed25519";
         }
-        if (EdECObjectIdentifiers.id_Ed448.equals(encryptionAlg.getAlgorithm()))
+        if (EdECObjectIdentifiers.id_Ed448.equals(encryptionAlgOID))
         {
             return "Ed448";
         }
-
-        String digestName = getDigestAlgName(encryptionAlg.getAlgorithm());
-
-        if (!digestName.equals(encryptionAlg.getAlgorithm().getId()))
+        if (PKCSObjectIdentifiers.id_alg_hss_lms_hashsig.equals(encryptionAlgOID))
         {
-            return digestName + "with" + getEncryptionAlgName(encryptionAlg.getAlgorithm());
+            return "LMS";
+        }
+        if (BCObjectIdentifiers.sphincsPlus.equals(encryptionAlgOID))
+        {
+            return "SPHINCSPlus";
+        }
+        if (MiscObjectIdentifiers.id_alg_composite.equals(encryptionAlgOID))
+        {
+            return "COMPOSITE";
         }
 
-        return getDigestAlgName(digestAlg.getAlgorithm()) + "with" + getEncryptionAlgName(encryptionAlg.getAlgorithm());
+        String digestName = getDigestAlgName(encryptionAlgOID);
+
+        if (!digestName.equals(encryptionAlgOID.getId()))
+        {
+            return digestName + "with" + getEncryptionAlgName(encryptionAlgOID);
+        }
+
+        return getDigestAlgName(digestAlg.getAlgorithm()) + "with" + getEncryptionAlgName(encryptionAlgOID);
     }
 }

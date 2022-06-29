@@ -3,7 +3,7 @@ package org.bouncycastle.cms;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.Iterator;
 
 import org.bouncycastle.asn1.ASN1EncodableVector;
@@ -52,7 +52,7 @@ public class CMSAuthEnvelopedDataGenerator
             
             if (authAttrsGenerator != null)
             {
-                AttributeTable attrTable = authAttrsGenerator.getAttributes(new HashMap());
+                AttributeTable attrTable = authAttrsGenerator.getAttributes(Collections.EMPTY_MAP);
 
                 authenticatedAttrSet = new DERSet(attrTable.toASN1EncodableVector());
 
@@ -67,6 +67,7 @@ public class CMSAuthEnvelopedDataGenerator
         }
 
         byte[] encryptedContent = bOut.toByteArray();
+        byte[] mac = contentEncryptor.getMAC();
 
         encAlgId = contentEncryptor.getAlgorithmIdentifier();
 
@@ -89,14 +90,14 @@ public class CMSAuthEnvelopedDataGenerator
         ASN1Set unprotectedAttrSet = null;
         if (unauthAttrsGenerator != null)
         {
-            AttributeTable attrTable = unauthAttrsGenerator.getAttributes(new HashMap());
+            AttributeTable attrTable = unauthAttrsGenerator.getAttributes(Collections.EMPTY_MAP);
 
             unprotectedAttrSet = new DLSet(attrTable.toASN1EncodableVector());
         }
 
         ContentInfo contentInfo = new ContentInfo(
                 CMSObjectIdentifiers.authEnvelopedData,
-                new AuthEnvelopedData(originatorInfo, new DERSet(recipientInfos), eci, authenticatedAttrSet, new DEROctetString(contentEncryptor.getMAC()), unprotectedAttrSet));
+                new AuthEnvelopedData(originatorInfo, new DERSet(recipientInfos), eci, authenticatedAttrSet, new DEROctetString(mac), unprotectedAttrSet));
 
         return new CMSAuthEnvelopedData(contentInfo);
     }

@@ -29,8 +29,7 @@ public abstract class AbstractTlsPeer
      */
     protected ProtocolVersion[] getSupportedVersions()
     {
-        // TODO[tls13] Enable TLSv13 by default in due course
-        return ProtocolVersion.TLSv12.downTo(ProtocolVersion.TLSv10);
+        return ProtocolVersion.TLSv13.downTo(ProtocolVersion.TLSv12);
     }
 
     protected abstract int[] getSupportedCipherSuites();
@@ -66,6 +65,21 @@ public abstract class AbstractTlsPeer
     public boolean allowLegacyResumption()
     {
         return false;
+    }
+
+    public int getMaxCertificateChainLength()
+    {
+        return 10;
+    }
+
+    public int getMaxHandshakeMessageSize()
+    {
+        return 32768;
+    }
+
+    public short[] getPskKeyExchangeModes()
+    {
+        return new short[]{ PskKeyExchangeMode.psk_dhe_ke };
     }
 
     public boolean requiresCloseNotify()

@@ -4,6 +4,7 @@ import java.io.IOException;
 
 import org.bouncycastle.tls.crypto.TlsCrypto;
 import org.bouncycastle.tls.crypto.TlsCryptoUtils;
+import org.bouncycastle.tls.crypto.TlsHash;
 import org.bouncycastle.tls.crypto.TlsNonceGenerator;
 import org.bouncycastle.tls.crypto.TlsSecret;
 import org.bouncycastle.util.Arrays;
@@ -25,7 +26,8 @@ abstract class AbstractTlsContext
         byte[] additionalSeedMaterial = new byte[16];
         Pack.longToBigEndian(nextCounterValue(), additionalSeedMaterial, 0);
         Pack.longToBigEndian(Times.nanoTime(), additionalSeedMaterial, 8);
-        additionalSeedMaterial[0] = (byte)connectionEnd;
+        additionalSeedMaterial[0] &= 0x7F;
+        additionalSeedMaterial[0] |= (byte)(connectionEnd << 7);
 
         return crypto.createNonceGenerator(additionalSeedMaterial);
     }
@@ -49,38 +51,54 @@ abstract class AbstractTlsContext
         this.nonceGenerator = createNonceGenerator(crypto, connectionEnd);
     }
 
-    synchronized void handshakeBeginning(TlsPeer peer) throws IOException
+    void handshakeBeginning(TlsPeer peer) throws IOException
     {
-        if (null != securityParametersHandshake)
+        synchronized (this)
         {
-            throw new TlsFatalAlert(AlertDescription.internal_error, "Handshake already started");
-        }
+            if (null != securityParametersHandshake)
+            {
+                throw new TlsFatalAlert(AlertDescription.internal_error, "Handshake already started");
+            }
 
-        securityParametersHandshake = new SecurityParameters();
-        securityParametersHandshake.entity = connectionEnd;
+            this.securityParametersHandshake = new SecurityParameters();
+            this.securityParametersHandshake.entity = connectionEnd;
 
-        if (null != securityParametersConnection)
-        {
-            throw new TlsFatalAlert(AlertDescription.internal_error, "Renegotiation not supported");
+            if (null != securityParametersConnection)
+            {
+                securityParametersHandshake.renegotiating = true;
+                securityParametersHandshake.secureRenegotiation = securityParametersConnection.isSecureRenegotiation();
+                securityParametersHandshake.negotiatedVersion = securityParametersConnection.getNegotiatedVersion();
+            }
         }
 
         peer.notifyHandshakeBeginning();
     }
 
-    synchronized void handshakeComplete(TlsPeer peer, TlsSession session) throws IOException
+    void handshakeComplete(TlsPeer peer, TlsSession session) throws IOException
     {
-        if (null == securityParametersHandshake)
+        synchronized (this)
         {
-            throw new TlsFatalAlert(AlertDescription.internal_error);
+            if (null == securityParametersHandshake)
+            {
+                throw new TlsFatalAlert(AlertDescription.internal_error);
+            }
+
+            this.session = session;
+            this.securityParametersConnection = securityParametersHandshake;
+            this.securityParametersHandshake = null;
         }
 
-        this.session = session;
-
-        securityParametersConnection = securityParametersHandshake;
-
         peer.notifyHandshakeComplete();
+    }
 
-        securityParametersHandshake = null;
+    synchronized boolean isConnected()
+    {
+        return null != securityParametersConnection;
+    }
+
+    synchronized boolean isHandshaking()
+    {
+        return null != securityParametersHandshake;
     }
 
     public TlsCrypto getCrypto()
@@ -115,7 +133,7 @@ abstract class AbstractTlsContext
         return clientSupportedVersions;
     }
 
-    public void setClientSupportedVersions(ProtocolVersion[] clientSupportedVersions)
+    void setClientSupportedVersions(ProtocolVersion[] clientSupportedVersions)
     {
         this.clientSupportedVersions = clientSupportedVersions;
     }
@@ -135,7 +153,7 @@ abstract class AbstractTlsContext
         return rsaPreMasterSecretVersion;
     }
 
-    public void setRSAPreMasterSecretVersion(ProtocolVersion rsaPreMasterSecretVersion)
+    void setRSAPreMasterSecretVersion(ProtocolVersion rsaPreMasterSecretVersion)
     {
         this.rsaPreMasterSecretVersion = rsaPreMasterSecretVersion;
     }
@@ -213,7 +231,7 @@ abstract class AbstractTlsContext
         }
 
         return exportKeyingMaterial13(checkEarlyExportSecret(sp.getEarlyExporterMasterSecret()),
-            sp.getPRFHashAlgorithm(), asciiLabel, context, length);
+            sp.getPRFCryptoHashAlgorithm(), asciiLabel, context, length);
     }
 
     public byte[] exportKeyingMaterial(String asciiLabel, byte[] context, int length)
@@ -240,8 +258,8 @@ abstract class AbstractTlsContext
 
         if (TlsUtils.isTLSv13(sp.getNegotiatedVersion()))
         {
-            return exportKeyingMaterial13(checkExportSecret(sp.getExporterMasterSecret()), sp.getPRFHashAlgorithm(),
-                asciiLabel, context, length);
+            return exportKeyingMaterial13(checkExportSecret(sp.getExporterMasterSecret()),
+                sp.getPRFCryptoHashAlgorithm(), asciiLabel, context, length);
         }
 
         byte[] seed = TlsUtils.calculateExporterSeed(sp, context);
@@ -249,8 +267,8 @@ abstract class AbstractTlsContext
         return TlsUtils.PRF(sp, checkExportSecret(sp.getMasterSecret()), asciiLabel, seed, length).extract();
     }
 
-    protected byte[] exportKeyingMaterial13(TlsSecret secret, short hashAlgorithm, String asciiLabel, byte[] context,
-        int length)
+    protected byte[] exportKeyingMaterial13(TlsSecret secret, int cryptoHashAlgorithm, String asciiLabel,
+        byte[] context, int length)
     {
         if (null == context)
         {
@@ -263,7 +281,21 @@ abstract class AbstractTlsContext
 
         try
         {
-            return TlsCryptoUtils.hkdfExpandLabel(secret, hashAlgorithm, asciiLabel, context, length).extract();
+            TlsHash exporterHash = getCrypto().createHash(cryptoHashAlgorithm);
+            byte[] emptyTranscriptHash = exporterHash.calculateHash();
+
+            TlsSecret exporterSecret = TlsUtils.deriveSecret(getSecurityParametersConnection(), secret, asciiLabel,
+                emptyTranscriptHash);
+
+            byte[] exporterContext = emptyTranscriptHash;
+            if (context.length > 0)
+            {
+                exporterHash.update(context, 0, context.length);
+                exporterContext = exporterHash.calculateHash();
+            }
+
+            return TlsCryptoUtils
+                .hkdfExpandLabel(exporterSecret, cryptoHashAlgorithm, "exporter", exporterContext, length).extract();
         }
         catch (IOException e)
         {

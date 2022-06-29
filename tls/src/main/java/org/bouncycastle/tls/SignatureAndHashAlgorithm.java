@@ -9,14 +9,32 @@ import java.io.OutputStream;
  */
 public class SignatureAndHashAlgorithm
 {
-    public static final SignatureAndHashAlgorithm ed25519 = new SignatureAndHashAlgorithm(HashAlgorithm.Intrinsic, SignatureAlgorithm.ed25519);
-    public static final SignatureAndHashAlgorithm ed448 = new SignatureAndHashAlgorithm(HashAlgorithm.Intrinsic, SignatureAlgorithm.ed448);
-    public static final SignatureAndHashAlgorithm rsa_pss_rsae_sha256 = new SignatureAndHashAlgorithm(HashAlgorithm.Intrinsic, SignatureAlgorithm.rsa_pss_rsae_sha256);
-    public static final SignatureAndHashAlgorithm rsa_pss_rsae_sha384 = new SignatureAndHashAlgorithm(HashAlgorithm.Intrinsic, SignatureAlgorithm.rsa_pss_rsae_sha384);
-    public static final SignatureAndHashAlgorithm rsa_pss_rsae_sha512 = new SignatureAndHashAlgorithm(HashAlgorithm.Intrinsic, SignatureAlgorithm.rsa_pss_rsae_sha512);
-    public static final SignatureAndHashAlgorithm rsa_pss_pss_sha256 = new SignatureAndHashAlgorithm(HashAlgorithm.Intrinsic, SignatureAlgorithm.rsa_pss_pss_sha256);
-    public static final SignatureAndHashAlgorithm rsa_pss_pss_sha384 = new SignatureAndHashAlgorithm(HashAlgorithm.Intrinsic, SignatureAlgorithm.rsa_pss_pss_sha384);
-    public static final SignatureAndHashAlgorithm rsa_pss_pss_sha512 = new SignatureAndHashAlgorithm(HashAlgorithm.Intrinsic, SignatureAlgorithm.rsa_pss_pss_sha512);
+    public static final SignatureAndHashAlgorithm ecdsa_brainpoolP256r1tls13_sha256 =
+        create(SignatureScheme.ecdsa_brainpoolP256r1tls13_sha256);
+    public static final SignatureAndHashAlgorithm ecdsa_brainpoolP384r1tls13_sha384 =
+        create(SignatureScheme.ecdsa_brainpoolP384r1tls13_sha384);
+    public static final SignatureAndHashAlgorithm ecdsa_brainpoolP512r1tls13_sha512 =
+        create(SignatureScheme.ecdsa_brainpoolP512r1tls13_sha512);
+    public static final SignatureAndHashAlgorithm ed25519 =
+        create(SignatureScheme.ed25519);
+    public static final SignatureAndHashAlgorithm ed448 =
+        create(SignatureScheme.ed448);
+    public static final SignatureAndHashAlgorithm gostr34102012_256 =
+        create(HashAlgorithm.Intrinsic, SignatureAlgorithm.gostr34102012_256);
+    public static final SignatureAndHashAlgorithm gostr34102012_512 =
+        create(HashAlgorithm.Intrinsic, SignatureAlgorithm.gostr34102012_512);
+    public static final SignatureAndHashAlgorithm rsa_pss_rsae_sha256 =
+        create(SignatureScheme.rsa_pss_rsae_sha256);
+    public static final SignatureAndHashAlgorithm rsa_pss_rsae_sha384 =
+        create(SignatureScheme.rsa_pss_rsae_sha384);
+    public static final SignatureAndHashAlgorithm rsa_pss_rsae_sha512 =
+        create(SignatureScheme.rsa_pss_rsae_sha512);
+    public static final SignatureAndHashAlgorithm rsa_pss_pss_sha256 =
+        create(SignatureScheme.rsa_pss_pss_sha256);
+    public static final SignatureAndHashAlgorithm rsa_pss_pss_sha384 =
+        create(SignatureScheme.rsa_pss_pss_sha384);
+    public static final SignatureAndHashAlgorithm rsa_pss_pss_sha512 =
+        create(SignatureScheme.rsa_pss_pss_sha512);
 
     public static SignatureAndHashAlgorithm getInstance(short hashAlgorithm, short signatureAlgorithm)
     {
@@ -25,25 +43,55 @@ public class SignatureAndHashAlgorithm
         case HashAlgorithm.Intrinsic:
             return getInstanceIntrinsic(signatureAlgorithm);
         default:
-            return new SignatureAndHashAlgorithm(hashAlgorithm, signatureAlgorithm);
+            return create(hashAlgorithm, signatureAlgorithm);
         }
     }
 
-    public static SignatureAndHashAlgorithm getInstanceIntrinsic(short signatureAlgorithm)
+    private static SignatureAndHashAlgorithm getInstanceIntrinsic(short signatureAlgorithm)
     {
         switch (signatureAlgorithm)
         {
-        case SignatureAlgorithm.ed25519:                return ed25519;
-        case SignatureAlgorithm.ed448:                  return ed448;
-        case SignatureAlgorithm.rsa_pss_rsae_sha256:    return rsa_pss_rsae_sha256;
-        case SignatureAlgorithm.rsa_pss_rsae_sha384:    return rsa_pss_rsae_sha384;
-        case SignatureAlgorithm.rsa_pss_rsae_sha512:    return rsa_pss_rsae_sha512;
-        case SignatureAlgorithm.rsa_pss_pss_sha256:     return rsa_pss_pss_sha256;
-        case SignatureAlgorithm.rsa_pss_pss_sha384:     return rsa_pss_pss_sha384;
-        case SignatureAlgorithm.rsa_pss_pss_sha512:     return rsa_pss_pss_sha512;
+        case SignatureAlgorithm.ed25519:
+            return ed25519;
+        case SignatureAlgorithm.ed448:
+            return ed448;
+        case SignatureAlgorithm.gostr34102012_256:
+            return gostr34102012_256;
+        case SignatureAlgorithm.gostr34102012_512:
+            return gostr34102012_512;
+        case SignatureAlgorithm.rsa_pss_rsae_sha256:
+            return rsa_pss_rsae_sha256;
+        case SignatureAlgorithm.rsa_pss_rsae_sha384:
+            return rsa_pss_rsae_sha384;
+        case SignatureAlgorithm.rsa_pss_rsae_sha512:
+            return rsa_pss_rsae_sha512;
+        case SignatureAlgorithm.rsa_pss_pss_sha256:
+            return rsa_pss_pss_sha256;
+        case SignatureAlgorithm.rsa_pss_pss_sha384:
+            return rsa_pss_pss_sha384;
+        case SignatureAlgorithm.rsa_pss_pss_sha512:
+            return rsa_pss_pss_sha512;
+        case SignatureAlgorithm.ecdsa_brainpoolP256r1tls13_sha256:
+            return ecdsa_brainpoolP256r1tls13_sha256;
+        case SignatureAlgorithm.ecdsa_brainpoolP384r1tls13_sha384:
+            return ecdsa_brainpoolP384r1tls13_sha384;
+        case SignatureAlgorithm.ecdsa_brainpoolP512r1tls13_sha512:
+            return ecdsa_brainpoolP512r1tls13_sha512;
         default:
-            return new SignatureAndHashAlgorithm(HashAlgorithm.Intrinsic, signatureAlgorithm);
+            return create(HashAlgorithm.Intrinsic, signatureAlgorithm);
         }
+    }
+
+    private static SignatureAndHashAlgorithm create(int signatureScheme)
+    {
+        short hashAlgorithm = SignatureScheme.getHashAlgorithm(signatureScheme);
+        short signatureAlgorithm = SignatureScheme.getSignatureAlgorithm(signatureScheme);
+        return create(hashAlgorithm, signatureAlgorithm);
+    }
+
+    private static SignatureAndHashAlgorithm create(short hashAlgorithm, short signatureAlgorithm)
+    {
+        return new SignatureAndHashAlgorithm(hashAlgorithm, signatureAlgorithm);
     }
 
     protected final short hash;
@@ -118,7 +166,7 @@ public class SignatureAndHashAlgorithm
         short hash = TlsUtils.readUint8(input);
         short signature = TlsUtils.readUint8(input);
 
-        return SignatureAndHashAlgorithm.getInstance(hash, signature);
+        return getInstance(hash, signature);
     }
 
     public boolean equals(Object obj)

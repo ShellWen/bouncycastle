@@ -5,13 +5,15 @@ import java.io.IOException;
 import org.bouncycastle.crypto.CryptoException;
 import org.bouncycastle.crypto.DSA;
 import org.bouncycastle.crypto.Signer;
+import org.bouncycastle.crypto.digests.NullDigest;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
 import org.bouncycastle.crypto.params.ParametersWithRandom;
 import org.bouncycastle.crypto.signers.DSADigestSigner;
 import org.bouncycastle.tls.AlertDescription;
-import org.bouncycastle.tls.HashAlgorithm;
 import org.bouncycastle.tls.SignatureAndHashAlgorithm;
 import org.bouncycastle.tls.TlsFatalAlert;
+import org.bouncycastle.tls.crypto.CryptoHashAlgorithm;
+import org.bouncycastle.tls.crypto.TlsCryptoUtils;
 
 /**
  * BC light-weight base class for the signers implementing the two DSA style algorithms from FIPS PUB 186-4: DSA and ECDSA.
@@ -24,7 +26,7 @@ public abstract class BcTlsDSSSigner
         super(crypto, privateKey);
     }
 
-    protected abstract DSA createDSAImpl(short hashAlgorithm);
+    protected abstract DSA createDSAImpl(int cryptoHashAlgorithm);
 
     protected abstract short getSignatureAlgorithm();
 
@@ -34,12 +36,13 @@ public abstract class BcTlsDSSSigner
         {
             throw new IllegalStateException("Invalid algorithm: " + algorithm);
         }
-        
-        short hashAlgorithm = algorithm == null ? HashAlgorithm.sha1 : algorithm.getHash();
-        
-        Signer s = new DSADigestSigner(createDSAImpl(hashAlgorithm), crypto.createDigest(HashAlgorithm.none));
-        s.init(true, new ParametersWithRandom(privateKey, crypto.getSecureRandom()));
-        Signer signer = s;
+
+        int cryptoHashAlgorithm = (null == algorithm)
+            ? CryptoHashAlgorithm.sha1
+            : TlsCryptoUtils.getHash(algorithm.getHash());
+
+        Signer signer = new DSADigestSigner(createDSAImpl(cryptoHashAlgorithm), new NullDigest());
+        signer.init(true, new ParametersWithRandom(privateKey, crypto.getSecureRandom()));
         if (algorithm == null)
         {
             // Note: Only use the SHA1 part of the (MD5/SHA1) hash

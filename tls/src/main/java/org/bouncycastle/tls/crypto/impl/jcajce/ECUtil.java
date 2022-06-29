@@ -123,6 +123,9 @@ class ECUtil
                 return ecAlgParams;
             }
         }
+        catch (AssertionError e)
+        {
+        }
         catch (Exception e)
         {
         }
@@ -137,6 +140,21 @@ class ECUtil
 
     static ECParameterSpec getECParameterSpec(JcaTlsCrypto crypto, AlgorithmParameterSpec initSpec)
     {
+        KeyPairGenerator kpGen;
+        try
+        {
+            kpGen = crypto.getHelper().createKeyPairGenerator("EC");
+            kpGen.initialize(initSpec, crypto.getSecureRandom());
+        }
+        catch (AssertionError e)
+        {
+            return null;
+        }
+        catch (Exception e)
+        {
+            return null;
+        }
+
         // Try the "modern" way
         try
         {
@@ -148,6 +166,9 @@ class ECUtil
             {
                 return ecSpec;
             }
+        }
+        catch (AssertionError e)
+        {
         }
         catch (Exception e)
         {
@@ -161,10 +182,11 @@ class ECUtil
          */
         try
         {
-            KeyPairGenerator kpGen = crypto.getHelper().createKeyPairGenerator("EC");
-            kpGen.initialize(initSpec, crypto.getSecureRandom());
             KeyPair kp = kpGen.generateKeyPair();
             return ((ECKey)kp.getPrivate()).getParams();
+        }
+        catch (AssertionError e)
+        {
         }
         catch (Exception e)
         {
@@ -180,7 +202,7 @@ class ECUtil
 
     static boolean isCurveSupported(JcaTlsCrypto crypto, String curveName)
     {
-        return isCurveSupported(crypto, new ECGenParameterSpec(curveName));
+        return null != curveName && isCurveSupported(crypto, new ECGenParameterSpec(curveName));
     }
 
     static boolean isCurveSupported(JcaTlsCrypto crypto, ECGenParameterSpec initSpec)

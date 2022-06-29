@@ -73,7 +73,7 @@ public class KeyManagerFactoryTest
 
         trustManagerFactory.init(trustStore);
 
-        SSLContext context = SSLContext.getInstance("TLS", ProviderUtils.PROVIDER_NAME_BCJSSE);
+        SSLContext context = SSLContext.getInstance("TLSv1.2", ProviderUtils.PROVIDER_NAME_BCJSSE);
 
         context.init(null, trustManagerFactory.getTrustManagers(), null);
 
@@ -119,7 +119,7 @@ public class KeyManagerFactoryTest
             ProviderUtils.PROVIDER_NAME_BCJSSE);
         trustManagerFactory.init(trustStore);
 
-        SSLContext context = SSLContext.getInstance("TLS", ProviderUtils.PROVIDER_NAME_BCJSSE);
+        SSLContext context = SSLContext.getInstance("TLSv1.2", ProviderUtils.PROVIDER_NAME_BCJSSE);
 
         context.init(null, trustManagerFactory.getTrustManagers(), null);
 
@@ -158,7 +158,7 @@ public class KeyManagerFactoryTest
             ProviderUtils.PROVIDER_NAME_BCJSSE);
         trustManagerFactory.init(clientTS);
 
-        SSLContext context = SSLContext.getInstance("TLS", ProviderUtils.PROVIDER_NAME_BCJSSE);
+        SSLContext context = SSLContext.getInstance("TLSv1.2", ProviderUtils.PROVIDER_NAME_BCJSSE);
 
         context.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), null);
 
@@ -244,24 +244,24 @@ public class KeyManagerFactoryTest
         assertNotNull(alias);
         assertNotNull(manager.getCertificateChain(alias));
         assertNotNull(manager.getPrivateKey(alias));
-        assertNotNull(manager.getKeyBC(alias));
 
-        BCX509Key key = manager.chooseServerKeyBC(keyType, null, null);
+        BCX509Key key = manager.chooseServerKeyBC(new String[]{ keyType }, null, null);
         assertNotNull(key);
 
         alias = manager.chooseServerAlias(keyType, new Principal[] { new X500Principal("CN=TLS Test") }, null);
         assertNull(alias);
 
-        key = manager.chooseServerKeyBC(keyType, new Principal[] { new X500Principal("CN=TLS Test") }, null);
+        key = manager.chooseServerKeyBC(new String[]{ keyType }, new Principal[] { new X500Principal("CN=TLS Test") },
+            null);
         assertNull(key);
 
         alias = manager.chooseServerAlias(keyType, new Principal[] { new X500Principal("CN=TLS Test CA") }, null);
         assertNotNull(alias);
         assertNotNull(manager.getCertificateChain(alias));
         assertNotNull(manager.getPrivateKey(alias));
-        assertNotNull(manager.getKeyBC(alias));
 
-        key = manager.chooseServerKeyBC(keyType, new Principal[] { new X500Principal("CN=TLS Test CA") }, null);
+        key = manager.chooseServerKeyBC(new String[]{ keyType },
+            new Principal[]{ new X500Principal("CN=TLS Test CA") }, null);
         assertNotNull(key);
     }
 

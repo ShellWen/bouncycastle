@@ -12,6 +12,7 @@ import org.bouncycastle.jsse.BCApplicationProtocolSelector;
 import org.bouncycastle.jsse.BCSNIMatcher;
 import org.bouncycastle.jsse.BCSNIServerName;
 import org.bouncycastle.jsse.java.security.BCAlgorithmConstraints;
+import org.bouncycastle.tls.TlsUtils;
 
 final class ProvSSLParameters
 {
@@ -37,9 +38,10 @@ final class ProvSSLParameters
     private BCAlgorithmConstraints algorithmConstraints = ProvAlgorithmConstraints.DEFAULT;
     private String endpointIdentificationAlgorithm;
     private boolean useCipherSuitesOrder = true;
+    private int maximumPacketSize = 0;
     private List<BCSNIMatcher> sniMatchers;
     private List<BCSNIServerName> sniServerNames;
-    private String[] applicationProtocols = new String[0];
+    private String[] applicationProtocols = TlsUtils.EMPTY_STRINGS;
     private BCApplicationProtocolSelector<SSLEngine> engineAPSelector;
     private BCApplicationProtocolSelector<SSLSocket> socketAPSelector;
     private ProvSSLSession sessionToResume;
@@ -180,6 +182,21 @@ final class ProvSSLParameters
     public void setUseCipherSuitesOrder(boolean useCipherSuitesOrder)
     {
         this.useCipherSuitesOrder = useCipherSuitesOrder;
+    }
+
+    public int getMaximumPacketSize()
+    {
+        return maximumPacketSize;
+    }
+
+    public void setMaximumPacketSize(int maximumPacketSize)
+    {
+        if (maximumPacketSize < 0)
+        {
+            throw new IllegalArgumentException("The maximum packet size cannot be negative");
+        }
+
+        this.maximumPacketSize = maximumPacketSize;
     }
 
     public List<BCSNIServerName> getServerNames()

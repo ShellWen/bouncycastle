@@ -11,10 +11,10 @@ import java.security.SecureRandom;
 import java.security.Signature;
 import java.security.spec.AlgorithmParameterSpec;
 import java.util.Hashtable;
+import java.util.Vector;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyAgreement;
-import javax.crypto.spec.SecretKeySpec;
 
 import org.bouncycastle.jcajce.util.JcaJceHelper;
 import org.bouncycastle.tls.AlertDescription;
@@ -30,11 +30,15 @@ import org.bouncycastle.tls.SignatureScheme;
 import org.bouncycastle.tls.TlsDHUtils;
 import org.bouncycastle.tls.TlsFatalAlert;
 import org.bouncycastle.tls.TlsUtils;
+import org.bouncycastle.tls.crypto.CryptoHashAlgorithm;
+import org.bouncycastle.tls.crypto.CryptoSignatureAlgorithm;
 import org.bouncycastle.tls.crypto.SRP6Group;
+import org.bouncycastle.tls.crypto.Tls13Verifier;
 import org.bouncycastle.tls.crypto.TlsCertificate;
 import org.bouncycastle.tls.crypto.TlsCipher;
 import org.bouncycastle.tls.crypto.TlsCryptoException;
 import org.bouncycastle.tls.crypto.TlsCryptoParameters;
+import org.bouncycastle.tls.crypto.TlsCryptoUtils;
 import org.bouncycastle.tls.crypto.TlsDHConfig;
 import org.bouncycastle.tls.crypto.TlsDHDomain;
 import org.bouncycastle.tls.crypto.TlsECConfig;
@@ -54,7 +58,6 @@ import org.bouncycastle.tls.crypto.impl.TlsAEADCipher;
 import org.bouncycastle.tls.crypto.impl.TlsAEADCipherImpl;
 import org.bouncycastle.tls.crypto.impl.TlsBlockCipher;
 import org.bouncycastle.tls.crypto.impl.TlsBlockCipherImpl;
-import org.bouncycastle.tls.crypto.impl.TlsEncryptor;
 import org.bouncycastle.tls.crypto.impl.TlsImplUtils;
 import org.bouncycastle.tls.crypto.impl.TlsNullCipher;
 import org.bouncycastle.tls.crypto.impl.jcajce.srp.SRP6Client;
@@ -158,9 +161,9 @@ public class JcaTlsCrypto
             switch (encryptionAlgorithm)
             {
             case EncryptionAlgorithm._3DES_EDE_CBC:
-                return createDESedeCipher(cryptoParams, macAlgorithm);
+                return createCipher_CBC(cryptoParams, "DESede", 24, macAlgorithm);
             case EncryptionAlgorithm.AES_128_CBC:
-                return createAESCipher(cryptoParams, 16, macAlgorithm);
+                return createCipher_CBC(cryptoParams, "AES", 16, macAlgorithm);
             case EncryptionAlgorithm.AES_128_CCM:
                 // NOTE: Ignores macAlgorithm
                 return createCipher_AES_CCM(cryptoParams, 16, 16);
@@ -171,7 +174,7 @@ public class JcaTlsCrypto
                 // NOTE: Ignores macAlgorithm
                 return createCipher_AES_GCM(cryptoParams, 16, 16);
             case EncryptionAlgorithm.AES_256_CBC:
-                return createAESCipher(cryptoParams, 32, macAlgorithm);
+                return createCipher_CBC(cryptoParams, "AES", 32, macAlgorithm);
             case EncryptionAlgorithm.AES_256_CCM:
                 // NOTE: Ignores macAlgorithm
                 return createCipher_AES_CCM(cryptoParams, 32, 16);
@@ -182,22 +185,22 @@ public class JcaTlsCrypto
                 // NOTE: Ignores macAlgorithm
                 return createCipher_AES_GCM(cryptoParams, 32, 16);
             case EncryptionAlgorithm.ARIA_128_CBC:
-                return createARIACipher(cryptoParams, 16, macAlgorithm);
+                return createCipher_CBC(cryptoParams, "ARIA", 16, macAlgorithm);
             case EncryptionAlgorithm.ARIA_128_GCM:
                 // NOTE: Ignores macAlgorithm
                 return createCipher_ARIA_GCM(cryptoParams, 16, 16);
             case EncryptionAlgorithm.ARIA_256_CBC:
-                return createARIACipher(cryptoParams, 32, macAlgorithm);
+                return createCipher_CBC(cryptoParams, "ARIA", 32, macAlgorithm);
             case EncryptionAlgorithm.ARIA_256_GCM:
                 // NOTE: Ignores macAlgorithm
                 return createCipher_ARIA_GCM(cryptoParams, 32, 16);
             case EncryptionAlgorithm.CAMELLIA_128_CBC:
-                return createCamelliaCipher(cryptoParams, 16, macAlgorithm);
+                return createCipher_CBC(cryptoParams, "Camellia", 16, macAlgorithm);
             case EncryptionAlgorithm.CAMELLIA_128_GCM:
                 // NOTE: Ignores macAlgorithm
                 return createCipher_Camellia_GCM(cryptoParams, 16, 16);
             case EncryptionAlgorithm.CAMELLIA_256_CBC:
-                return createCamelliaCipher(cryptoParams, 32, macAlgorithm);
+                return createCipher_CBC(cryptoParams, "Camellia", 32, macAlgorithm);
             case EncryptionAlgorithm.CAMELLIA_256_GCM:
                 // NOTE: Ignores macAlgorithm
                 return createCipher_Camellia_GCM(cryptoParams, 32, 16);
@@ -207,7 +210,15 @@ public class JcaTlsCrypto
             case EncryptionAlgorithm.NULL:
                 return createNullCipher(cryptoParams, macAlgorithm);
             case EncryptionAlgorithm.SEED_CBC:
-                return createSEEDCipher(cryptoParams, macAlgorithm);
+                return createCipher_CBC(cryptoParams, "SEED", 16, macAlgorithm);
+            case EncryptionAlgorithm.SM4_CBC:
+                return createCipher_CBC(cryptoParams, "SM4", 16, macAlgorithm);
+            case EncryptionAlgorithm.SM4_CCM:
+                // NOTE: Ignores macAlgorithm
+                return createCipher_SM4_CCM(cryptoParams);
+            case EncryptionAlgorithm.SM4_GCM:
+                // NOTE: Ignores macAlgorithm
+                return createCipher_SM4_GCM(cryptoParams);
 
             case EncryptionAlgorithm.DES40_CBC:
             case EncryptionAlgorithm.DES_CBC:
@@ -225,14 +236,34 @@ public class JcaTlsCrypto
         }
     }
 
-    public TlsHMAC createHMAC(short hashAlgorithm)
-    {
-        return createHMAC(getHMACAlgorithmName(hashAlgorithm));
-    }
-
     public TlsHMAC createHMAC(int macAlgorithm)
     {
-        return createHMAC(TlsUtils.getHashAlgorithmForHMACAlgorithm(macAlgorithm));
+        switch (macAlgorithm)
+        {
+        case MACAlgorithm.hmac_md5:
+        case MACAlgorithm.hmac_sha1:
+        case MACAlgorithm.hmac_sha256:
+        case MACAlgorithm.hmac_sha384:
+        case MACAlgorithm.hmac_sha512:
+            return createHMACForHash(TlsCryptoUtils.getHashForHMAC(macAlgorithm));
+
+        default:
+            throw new IllegalArgumentException("invalid MACAlgorithm: " + macAlgorithm);
+        }
+    }
+
+    public TlsHMAC createHMACForHash(int cryptoHashAlgorithm)
+    {
+        String hmacName = getHMACAlgorithmName(cryptoHashAlgorithm);
+
+        try
+        {
+            return new JceTlsHMAC(cryptoHashAlgorithm, helper.createMac(hmacName), hmacName);
+        }
+        catch (GeneralSecurityException e)
+        {
+            throw new RuntimeException("cannot create HMAC: " + hmacName, e);
+        }
     }
 
     protected TlsHMAC createHMAC_SSL(int macAlgorithm)
@@ -241,15 +272,15 @@ public class JcaTlsCrypto
         switch (macAlgorithm)
         {
         case MACAlgorithm.hmac_md5:
-            return new JcaSSL3HMAC(createHash(getDigestName(HashAlgorithm.md5)), 16, 64);
+            return new JcaSSL3HMAC(createHash(getDigestName(CryptoHashAlgorithm.md5)), 16, 64);
         case MACAlgorithm.hmac_sha1:
-            return new JcaSSL3HMAC(createHash(getDigestName(HashAlgorithm.sha1)), 20, 64);
+            return new JcaSSL3HMAC(createHash(getDigestName(CryptoHashAlgorithm.sha1)), 20, 64);
         case MACAlgorithm.hmac_sha256:
-            return new JcaSSL3HMAC(createHash(getDigestName(HashAlgorithm.sha256)), 32, 64);
+            return new JcaSSL3HMAC(createHash(getDigestName(CryptoHashAlgorithm.sha256)), 32, 64);
         case MACAlgorithm.hmac_sha384:
-            return new JcaSSL3HMAC(createHash(getDigestName(HashAlgorithm.sha384)), 48, 128);
+            return new JcaSSL3HMAC(createHash(getDigestName(CryptoHashAlgorithm.sha384)), 48, 128);
         case MACAlgorithm.hmac_sha512:
-            return new JcaSSL3HMAC(createHash(getDigestName(HashAlgorithm.sha512)), 64, 128);
+            return new JcaSSL3HMAC(createHash(getDigestName(CryptoHashAlgorithm.sha512)), 64, 128);
         default:
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
@@ -274,7 +305,7 @@ public class JcaTlsCrypto
 
         BigInteger[] ng = srpConfig.getExplicitNG();
         SRP6Group srpGroup= new SRP6Group(ng[0], ng[1]);
-        srpClient.init(srpGroup, createHash(HashAlgorithm.sha1), this.getSecureRandom());
+        srpClient.init(srpGroup, createHash(CryptoHashAlgorithm.sha1), this.getSecureRandom());
 
         return new TlsSRP6Client()
         {
@@ -303,7 +334,7 @@ public class JcaTlsCrypto
         final SRP6Server srpServer = new SRP6Server();
         BigInteger[] ng = srpConfig.getExplicitNG();
         SRP6Group srpGroup= new SRP6Group(ng[0], ng[1]);
-        srpServer.init(srpGroup, srpVerifier, createHash(HashAlgorithm.sha1), this.getSecureRandom());
+        srpServer.init(srpGroup, srpVerifier, createHash(CryptoHashAlgorithm.sha1), this.getSecureRandom());
         return new TlsSRP6Server()
         {
             public BigInteger generateServerCredentials()
@@ -331,7 +362,7 @@ public class JcaTlsCrypto
         BigInteger[] ng = srpConfig.getExplicitNG();
         final SRP6VerifierGenerator verifierGenerator = new SRP6VerifierGenerator();
 
-        verifierGenerator.init(ng[0], ng[1], createHash(HashAlgorithm.sha1));
+        verifierGenerator.init(ng[0], ng[1], createHash(CryptoHashAlgorithm.sha1));
 
         return new TlsSRP6VerifierGenerator()
         {
@@ -342,24 +373,26 @@ public class JcaTlsCrypto
         };
     }
 
-    public String getHMACAlgorithmName(short hashAlgorithm)
+    String getHMACAlgorithmName(int cryptoHashAlgorithm)
     {
-        switch (hashAlgorithm)
+        switch (cryptoHashAlgorithm)
         {
-        case HashAlgorithm.md5:
+        case CryptoHashAlgorithm.md5:
             return "HmacMD5";
-        case HashAlgorithm.sha1:
+        case CryptoHashAlgorithm.sha1:
             return "HmacSHA1";
-        case HashAlgorithm.sha224:
+        case CryptoHashAlgorithm.sha224:
             return "HmacSHA224";
-        case HashAlgorithm.sha256:
+        case CryptoHashAlgorithm.sha256:
             return "HmacSHA256";
-        case HashAlgorithm.sha384:
+        case CryptoHashAlgorithm.sha384:
             return "HmacSHA384";
-        case HashAlgorithm.sha512:
+        case CryptoHashAlgorithm.sha512:
             return "HmacSHA512";
+        case CryptoHashAlgorithm.sm3:
+            return "HmacSM3";
         default:
-            throw new IllegalArgumentException("invalid HashAlgorithm: " + HashAlgorithm.getText(hashAlgorithm));
+            throw new IllegalArgumentException("invalid CryptoHashAlgorithm: " + cryptoHashAlgorithm);
         }
     }
 
@@ -382,7 +415,7 @@ public class JcaTlsCrypto
         }
         else if (NamedGroup.refersToAnECDSACurve(namedGroup))
         {
-            return ECUtil.getAlgorithmParameters(this, NamedGroup.getName(namedGroup));
+            return ECUtil.getAlgorithmParameters(this, NamedGroup.getCurveName(namedGroup));
         }
         else if (NamedGroup.refersToASpecificFiniteField(namedGroup))
         {
@@ -395,40 +428,111 @@ public class JcaTlsCrypto
     public AlgorithmParameters getSignatureSchemeAlgorithmParameters(int signatureScheme)
         throws GeneralSecurityException
     {
-        switch (signatureScheme)
+        if (!SignatureScheme.isRSAPSS(signatureScheme))
         {
-        case SignatureScheme.rsa_pss_pss_sha256:
-        case SignatureScheme.rsa_pss_rsae_sha256:
-        case SignatureScheme.rsa_pss_pss_sha384:
-        case SignatureScheme.rsa_pss_rsae_sha384:
-        case SignatureScheme.rsa_pss_pss_sha512:
-        case SignatureScheme.rsa_pss_rsae_sha512:
-        {
-            short hash = SignatureScheme.getRSAPSSHashAlgorithm(signatureScheme);
-            String digestName = getDigestName(hash);
-            String sigName = RSAUtil.getDigestSigAlgName(digestName) + "WITHRSAANDMGF1";
-
-            AlgorithmParameterSpec pssSpec = RSAUtil.getPSSParameterSpec(hash, digestName, getHelper());
-
-            Signature signer = getHelper().createSignature(sigName);
-
-            // NOTE: We explicitly set them even though they should be the defaults, because providers vary
-            signer.setParameter(pssSpec);
-
-            return signer.getParameters();
-        }
-
-        default:
             return null;
         }
+
+        int cryptoHashAlgorithm = SignatureScheme.getCryptoHashAlgorithm(signatureScheme);
+        if (cryptoHashAlgorithm < 0)
+        {
+            return null;
+        }
+
+        String digestName = getDigestName(cryptoHashAlgorithm);
+        String sigName = RSAUtil.getDigestSigAlgName(digestName) + "WITHRSAANDMGF1";
+
+        AlgorithmParameterSpec pssSpec = RSAUtil.getPSSParameterSpec(cryptoHashAlgorithm, digestName, getHelper());
+
+        Signature signer = getHelper().createSignature(sigName);
+
+        // NOTE: We explicitly set them even though they should be the defaults, because providers vary
+        signer.setParameter(pssSpec);
+
+        return signer.getParameters();
     }
 
-    public boolean hasAllRawSignatureAlgorithms()
+    public boolean hasAnyStreamVerifiers(Vector signatureAndHashAlgorithms)
     {
-        // TODO[RFC 8422] Revisit the need to buffer the handshake for "Intrinsic" hash signatures
-        return !JcaUtils.isSunMSCAPIProviderActive()
-            && !hasSignatureAlgorithm(SignatureAlgorithm.ed25519)
-            && !hasSignatureAlgorithm(SignatureAlgorithm.ed448);
+        boolean isRSAStreamVerifier = JcaUtils.isSunMSCAPIProviderActive();
+
+        for (int i = 0, count = signatureAndHashAlgorithms.size(); i < count; ++i)
+        {
+            SignatureAndHashAlgorithm algorithm = (SignatureAndHashAlgorithm)signatureAndHashAlgorithms.elementAt(i);
+            switch (algorithm.getSignature())
+            {
+            case SignatureAlgorithm.rsa:
+            {
+                if (isRSAStreamVerifier)
+                {
+                    return true;
+                }
+                break;
+            }
+            case SignatureAlgorithm.dsa:
+            {
+                if (HashAlgorithm.getOutputSize(algorithm.getHash()) != 20)
+                {
+                    return true;
+                }
+                break;
+            }
+            }
+
+            switch (SignatureScheme.from(algorithm))
+            {
+            case SignatureScheme.ed25519:
+            case SignatureScheme.ed448:
+            case SignatureScheme.rsa_pss_rsae_sha256:
+            case SignatureScheme.rsa_pss_rsae_sha384:
+            case SignatureScheme.rsa_pss_rsae_sha512:
+            case SignatureScheme.rsa_pss_pss_sha256:
+            case SignatureScheme.rsa_pss_pss_sha384:
+            case SignatureScheme.rsa_pss_pss_sha512:
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean hasAnyStreamVerifiersLegacy(short[] clientCertificateTypes)
+    {
+        return false;
+    }
+
+    public boolean hasCryptoHashAlgorithm(int cryptoHashAlgorithm)
+    {
+        // TODO: expand
+        return true;
+    }
+
+    public boolean hasCryptoSignatureAlgorithm(int cryptoSignatureAlgorithm)
+    {
+        switch (cryptoSignatureAlgorithm)
+        {
+        case CryptoSignatureAlgorithm.rsa:
+        case CryptoSignatureAlgorithm.dsa:
+        case CryptoSignatureAlgorithm.ecdsa:
+        case CryptoSignatureAlgorithm.rsa_pss_rsae_sha256:
+        case CryptoSignatureAlgorithm.rsa_pss_rsae_sha384:
+        case CryptoSignatureAlgorithm.rsa_pss_rsae_sha512:
+        case CryptoSignatureAlgorithm.ed25519:
+        case CryptoSignatureAlgorithm.ed448:
+        case CryptoSignatureAlgorithm.rsa_pss_pss_sha256:
+        case CryptoSignatureAlgorithm.rsa_pss_pss_sha384:
+        case CryptoSignatureAlgorithm.rsa_pss_pss_sha512:
+            return true;
+
+        // TODO[draft-smyshlyaev-tls12-gost-suites-10]
+        case CryptoSignatureAlgorithm.gostr34102012_256:
+        case CryptoSignatureAlgorithm.gostr34102012_512:
+
+        // TODO[RFC 8998]
+        case CryptoSignatureAlgorithm.sm2:
+
+        default:
+            return false;
+        }
     }
 
     public boolean hasDHAgreement()
@@ -474,16 +578,35 @@ public class JcaTlsCrypto
         return supported.booleanValue();
     }
 
-    public boolean hasHashAlgorithm(short hashAlgorithm)
+    public boolean hasHKDFAlgorithm(int cryptoHashAlgorithm)
     {
-        // TODO: expand
-        return true;
+        switch (cryptoHashAlgorithm)
+        {
+        case CryptoHashAlgorithm.sha256:
+        case CryptoHashAlgorithm.sha384:
+        case CryptoHashAlgorithm.sha512:
+        case CryptoHashAlgorithm.sm3:
+            return true;
+
+        default:
+            return false;
+        }
     }
 
     public boolean hasMacAlgorithm(int macAlgorithm)
     {
-        // TODO: expand
-        return true;
+        switch (macAlgorithm)
+        {
+        case MACAlgorithm.hmac_md5:
+        case MACAlgorithm.hmac_sha1:
+        case MACAlgorithm.hmac_sha256:
+        case MACAlgorithm.hmac_sha384:
+        case MACAlgorithm.hmac_sha512:
+            return true;
+
+        default:
+            return false;
+        }
     }
 
     public boolean hasNamedGroup(int namedGroup)
@@ -572,7 +695,16 @@ public class JcaTlsCrypto
         case SignatureAlgorithm.rsa_pss_pss_sha256:
         case SignatureAlgorithm.rsa_pss_pss_sha384:
         case SignatureAlgorithm.rsa_pss_pss_sha512:
+        case SignatureAlgorithm.ecdsa_brainpoolP256r1tls13_sha256:
+        case SignatureAlgorithm.ecdsa_brainpoolP384r1tls13_sha384:
+        case SignatureAlgorithm.ecdsa_brainpoolP512r1tls13_sha512:
             return true;
+
+        // TODO[draft-smyshlyaev-tls12-gost-suites-10]
+        case SignatureAlgorithm.gostr34102012_256:
+        case SignatureAlgorithm.gostr34102012_512:
+        // TODO[RFC 8998]
+//        case SignatureAlgorithm.sm2:
         default:
             return false;
         }
@@ -580,28 +712,42 @@ public class JcaTlsCrypto
 
     public boolean hasSignatureAndHashAlgorithm(SignatureAndHashAlgorithm sigAndHashAlgorithm)
     {
-        /*
-         * This is somewhat overkill, but much simpler for now. It's also consistent with SunJSSE behaviour.
-         */
-        if (sigAndHashAlgorithm.getHash() == HashAlgorithm.sha224 && JcaUtils.isSunMSCAPIProviderActive())
-        {
-            return false;
-        }
+        short signature = sigAndHashAlgorithm.getSignature();
 
-        return hasSignatureAlgorithm(sigAndHashAlgorithm.getSignature());
+        switch (sigAndHashAlgorithm.getHash())
+        {
+        case HashAlgorithm.md5:
+            return SignatureAlgorithm.rsa == signature && hasSignatureAlgorithm(signature);
+        case HashAlgorithm.sha224:
+            // Somewhat overkill, but simpler for now. It's also consistent with SunJSSE behaviour.
+            return !JcaUtils.isSunMSCAPIProviderActive() && hasSignatureAlgorithm(signature);
+        default:
+            return hasSignatureAlgorithm(signature);
+        }
     }
 
     public boolean hasSignatureScheme(int signatureScheme)
     {
-        /*
-         * This is somewhat overkill, but much simpler for now. It's also consistent with SunJSSE behaviour.
-         */
-        if ((signatureScheme >>> 8) == HashAlgorithm.sha224 && JcaUtils.isSunMSCAPIProviderActive())
+        switch (signatureScheme)
         {
+        case SignatureScheme.sm2sig_sm3:
             return false;
-        }
+        default:
+        {
+            short signature = SignatureScheme.getSignatureAlgorithm(signatureScheme);
 
-        return hasSignatureAlgorithm((short)(signatureScheme & 0xFF));
+            switch(SignatureScheme.getCryptoHashAlgorithm(signatureScheme))
+            {
+            case CryptoHashAlgorithm.md5:
+                return SignatureAlgorithm.rsa == signature && hasSignatureAlgorithm(signature);
+            case CryptoHashAlgorithm.sha224:
+                // Somewhat overkill, but simpler for now. It's also consistent with SunJSSE behaviour.
+                return !JcaUtils.isSunMSCAPIProviderActive() && hasSignatureAlgorithm(signature);
+            default:
+                return hasSignatureAlgorithm(signature);
+            }
+        }
+        }
     }
 
     public boolean hasSRPAuthentication()
@@ -633,11 +779,11 @@ public class JcaTlsCrypto
         return adoptLocalSecret(data);
     }
 
-    public TlsHash createHash(short algorithm)
+    public TlsHash createHash(int cryptoHashAlgorithm)
     {
         try
         {
-            return createHash(getDigestName(algorithm));
+            return createHash(getDigestName(cryptoHashAlgorithm));
         }
         catch (GeneralSecurityException e)
         {
@@ -663,57 +809,9 @@ public class JcaTlsCrypto
         }
     }
 
-    public TlsEncryptor createEncryptor(TlsCertificate certificate)
-        throws IOException
+    public TlsSecret hkdfInit(int cryptoHashAlgorithm)
     {
-        JcaTlsCertificate jcaCert = JcaTlsCertificate.convert(this, certificate);
-        jcaCert.validateKeyUsageBit(JcaTlsCertificate.KU_KEY_ENCIPHERMENT);
-
-        final PublicKey pubKeyRSA = jcaCert.getPubKeyRSA();
-
-        return new TlsEncryptor()
-        {
-            public byte[] encrypt(byte[] input, int inOff, int length)
-                throws IOException
-            {
-                try
-                {
-                    Cipher c = createRSAEncryptionCipher();
-                    // try wrap mode first - strictly speaking this is the correct one to use.
-                    try
-                    {
-                        c.init(Cipher.WRAP_MODE, pubKeyRSA, getSecureRandom());
-                        return c.wrap(new SecretKeySpec(input, inOff, length, "TLS"));
-                    }
-                    catch (Exception e)
-                    {
-                        try
-                        {
-                            // okay, maybe the provider does not support wrap mode.
-                            c.init(Cipher.ENCRYPT_MODE, pubKeyRSA, getSecureRandom());
-                            return c.doFinal(input, inOff, length);
-                        }
-                        catch (Exception ex)
-                        {
-                            // okay, if we get here let's rethrow the original one.
-                            throw new TlsFatalAlert(AlertDescription.internal_error, e);
-                        }
-                    }
-                }
-                catch (GeneralSecurityException e)
-                {
-                    /*
-                     * This should never happen, only during decryption.
-                     */
-                    throw new TlsFatalAlert(AlertDescription.internal_error, e);
-                }
-            }
-        };
-    }
-
-    public TlsSecret hkdfInit(short hashAlgorithm)
-    {
-        return adoptLocalSecret(new byte[HashAlgorithm.getOutputSize(hashAlgorithm)]);
+        return adoptLocalSecret(new byte[TlsCryptoUtils.getHashOutputSize(cryptoHashAlgorithm)]);
     }
 
     /**
@@ -762,24 +860,6 @@ public class JcaTlsCrypto
         throws GeneralSecurityException
     {
         return new JceBlockCipherWithCBCImplicitIVImpl(helper.createCipher(cipherName), algorithm, isEncrypting);
-    }
-
-    /**
-     * If you want to create your own versions of HMACs, override this method.
-     *
-     * @param hmacName the name of the HMAC required.
-     * @return a HMAC calculator.
-     */
-    protected TlsHMAC createHMAC(String hmacName)
-    {
-        try
-        {
-            return new JceTlsHMAC(helper.createMac(hmacName), hmacName);
-        }
-        catch (GeneralSecurityException e)
-        {
-            throw new RuntimeException("cannot create HMAC: " + hmacName, e);
-        }
     }
 
     /**
@@ -837,11 +917,11 @@ public class JcaTlsCrypto
         }
     }
 
-    protected TlsStreamVerifier createStreamVerifier(DigitallySigned signature, PublicKey publicKey) throws IOException
+    protected TlsStreamVerifier createStreamVerifier(DigitallySigned digitallySigned, PublicKey publicKey) throws IOException
     {
-        String algorithmName = JcaUtils.getJcaAlgorithmName(signature.getAlgorithm());
+        String algorithmName = JcaUtils.getJcaAlgorithmName(digitallySigned.getAlgorithm());
 
-        return createStreamVerifier(algorithmName, null, signature.getSignature(), publicKey);
+        return createStreamVerifier(algorithmName, null, digitallySigned.getSignature(), publicKey);
     }
 
     protected TlsStreamVerifier createStreamVerifier(String algorithmName, AlgorithmParameterSpec parameter,
@@ -856,6 +936,25 @@ public class JcaTlsCrypto
             }
             verifier.initVerify(publicKey);
             return new JcaTlsStreamVerifier(verifier, signature);
+        }
+        catch (GeneralSecurityException e)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error, e);
+        }
+    }
+
+    protected Tls13Verifier createTls13Verifier(String algorithmName, AlgorithmParameterSpec parameter,
+        PublicKey publicKey) throws IOException
+    {
+        try
+        {
+            Signature verifier = getHelper().createSignature(algorithmName);
+            if (null != parameter)
+            {
+                verifier.setParameter(parameter);
+            }
+            verifier.initVerify(publicKey);
+            return new JcaTls13Verifier(verifier);
         }
         catch (GeneralSecurityException e)
         {
@@ -898,88 +997,59 @@ public class JcaTlsCrypto
 
     protected Boolean isSupportedEncryptionAlgorithm(int encryptionAlgorithm)
     {
-        try
+        switch (encryptionAlgorithm)
         {
-            switch (encryptionAlgorithm)
-            {
-            case EncryptionAlgorithm.CHACHA20_POLY1305:
-            {
-                helper.createCipher("ChaCha7539");
-                helper.createMac("Poly1305");
-                return Boolean.TRUE;
-            }
-            case EncryptionAlgorithm._3DES_EDE_CBC:
-            {
-                helper.createCipher("DESede/CBC/NoPadding");
-                return Boolean.TRUE;
-            }
-            case EncryptionAlgorithm.AES_128_CBC:
-            case EncryptionAlgorithm.AES_256_CBC:
-            {
-                helper.createCipher("AES/CBC/NoPadding");
-                return Boolean.TRUE;
-            }
-            case EncryptionAlgorithm.AES_128_CCM:
-            case EncryptionAlgorithm.AES_128_CCM_8:
-            case EncryptionAlgorithm.AES_256_CCM:
-            case EncryptionAlgorithm.AES_256_CCM_8:
-            {
-                helper.createCipher("AES/CCM/NoPadding");
-                return Boolean.TRUE;
-            }
-            case EncryptionAlgorithm.AES_128_GCM:
-            case EncryptionAlgorithm.AES_256_GCM:
-            {
-                helper.createCipher("AES/GCM/NoPadding");
-                return Boolean.TRUE;
-            }
-            case EncryptionAlgorithm.ARIA_128_CBC:
-            case EncryptionAlgorithm.ARIA_256_CBC:
-            {
-                helper.createCipher("ARIA/CBC/NoPadding");
-                return Boolean.TRUE;
-            }
-            case EncryptionAlgorithm.ARIA_128_GCM:
-            case EncryptionAlgorithm.ARIA_256_GCM:
-            {
-                helper.createCipher("ARIA/GCM/NoPadding");
-                return Boolean.TRUE;
-            }
-            case EncryptionAlgorithm.CAMELLIA_128_CBC:
-            case EncryptionAlgorithm.CAMELLIA_256_CBC:
-            {
-                helper.createCipher("Camellia/CBC/NoPadding");
-                return Boolean.TRUE;
-            }
-            case EncryptionAlgorithm.CAMELLIA_128_GCM:
-            case EncryptionAlgorithm.CAMELLIA_256_GCM:
-            {
-                helper.createCipher("Camellia/GCM/NoPadding");
-                return Boolean.TRUE;
-            }
-            case EncryptionAlgorithm.SEED_CBC:
-            {
-                helper.createCipher("SEED/CBC/NoPadding");
-                return Boolean.TRUE;
-            }
-            case EncryptionAlgorithm.NULL:
-            {
-                return Boolean.TRUE;
-            }
+        case EncryptionAlgorithm._3DES_EDE_CBC:
+            return isUsableCipher("DESede/CBC/NoPadding", 192);
+        case EncryptionAlgorithm.AES_128_CBC:
+            return isUsableCipher("AES/CBC/NoPadding", 128);
+        case EncryptionAlgorithm.AES_128_CCM:
+        case EncryptionAlgorithm.AES_128_CCM_8:
+            return isUsableCipher("AES/CCM/NoPadding", 128);
+        case EncryptionAlgorithm.AES_128_GCM:
+            return isUsableCipher("AES/GCM/NoPadding", 128);
+        case EncryptionAlgorithm.AES_256_CBC:
+            return isUsableCipher("AES/CBC/NoPadding", 256);
+        case EncryptionAlgorithm.AES_256_CCM:
+        case EncryptionAlgorithm.AES_256_CCM_8:
+            return isUsableCipher("AES/CCM/NoPadding", 256);
+        case EncryptionAlgorithm.AES_256_GCM:
+            return isUsableCipher("AES/GCM/NoPadding", 256);
+        case EncryptionAlgorithm.ARIA_128_CBC:
+            return isUsableCipher("ARIA/CBC/NoPadding", 128);
+        case EncryptionAlgorithm.ARIA_128_GCM:
+            return isUsableCipher("ARIA/GCM/NoPadding", 128);
+        case EncryptionAlgorithm.ARIA_256_CBC:
+            return isUsableCipher("ARIA/CBC/NoPadding", 256);
+        case EncryptionAlgorithm.ARIA_256_GCM:
+            return isUsableCipher("ARIA/GCM/NoPadding", 256);
+        case EncryptionAlgorithm.CAMELLIA_128_CBC:
+            return isUsableCipher("Camellia/CBC/NoPadding", 128);
+        case EncryptionAlgorithm.CAMELLIA_128_GCM:
+            return isUsableCipher("Camellia/GCM/NoPadding", 128);
+        case EncryptionAlgorithm.CAMELLIA_256_CBC:
+            return isUsableCipher("Camellia/CBC/NoPadding", 256);
+        case EncryptionAlgorithm.CAMELLIA_256_GCM:
+            return isUsableCipher("Camellia/GCM/NoPadding", 256);
+        case EncryptionAlgorithm.CHACHA20_POLY1305:
+            return isUsableCipher("ChaCha7539", 256) && isUsableMAC("Poly1305");
+        case EncryptionAlgorithm.NULL:
+            return Boolean.TRUE;
+        case EncryptionAlgorithm.SEED_CBC:
+            return isUsableCipher("SEED/CBC/NoPadding", 128);
+        case EncryptionAlgorithm.SM4_CBC:
+            return isUsableCipher("SM4/CBC/NoPadding", 128);
+        case EncryptionAlgorithm.SM4_CCM:
+            return isUsableCipher("SM4/CCM/NoPadding", 128);
+        case EncryptionAlgorithm.SM4_GCM:
+            return isUsableCipher("SM4/GCM/NoPadding", 128);
 
-            case EncryptionAlgorithm.DES40_CBC:
-            case EncryptionAlgorithm.DES_CBC:
-            case EncryptionAlgorithm.IDEA_CBC:
-            case EncryptionAlgorithm.RC2_CBC_40:
-            case EncryptionAlgorithm.RC4_128:
-            case EncryptionAlgorithm.RC4_40:
-            {
-                return Boolean.FALSE;
-            }
-            }
-        }
-        catch (GeneralSecurityException e)
-        {
+        case EncryptionAlgorithm.DES_CBC:
+        case EncryptionAlgorithm.DES40_CBC:
+        case EncryptionAlgorithm.IDEA_CBC:
+        case EncryptionAlgorithm.RC2_CBC_40:
+        case EncryptionAlgorithm.RC4_128:
+        case EncryptionAlgorithm.RC4_40:
             return Boolean.FALSE;
         }
 
@@ -1019,12 +1089,11 @@ public class JcaTlsCrypto
             }
             else if (NamedGroup.refersToAnECDSACurve(namedGroup))
             {
-                return Boolean.valueOf(ECUtil.isCurveSupported(this, NamedGroup.getName(namedGroup)));
+                return Boolean.valueOf(ECUtil.isCurveSupported(this, NamedGroup.getCurveName(namedGroup)));
             }
             else if (NamedGroup.refersToASpecificFiniteField(namedGroup))
             {
-                // TODO[tls] Actually check for DH support for the individual groups
-                return Boolean.TRUE;
+                return Boolean.valueOf(DHUtil.isGroupSupported(this, TlsDHUtils.getNamedDHGroup(namedGroup)));
             }
         }
         catch (GeneralSecurityException e)
@@ -1036,64 +1105,49 @@ public class JcaTlsCrypto
         return null;
     }
 
+    protected boolean isUsableCipher(String cipherAlgorithm, int keySize)
+    {
+        try
+        {
+            helper.createCipher(cipherAlgorithm);
+            return Cipher.getMaxAllowedKeyLength(cipherAlgorithm) >= keySize;
+        }
+        catch (GeneralSecurityException e)
+        {
+            return false;
+        }
+    }
+
+    protected boolean isUsableMAC(String macAlgorithm)
+    {
+        try
+        {
+            helper.createMac(macAlgorithm);
+            return true;
+        }
+        catch (GeneralSecurityException e)
+        {
+            return false;
+        }
+    }
+
     public JcaJceHelper getHelper()
     {
         return helper;
     }
 
-    private TlsBlockCipher createAESCipher(TlsCryptoParameters cryptoParams, int cipherKeySize, int macAlgorithm)
-        throws IOException, GeneralSecurityException
-    {
-        return new TlsBlockCipher(this, cryptoParams, createCBCBlockOperator(cryptoParams, "AES", true, cipherKeySize),
-            createCBCBlockOperator(cryptoParams, "AES", false, cipherKeySize), createMAC(cryptoParams, macAlgorithm),
-            createMAC(cryptoParams, macAlgorithm), cipherKeySize);
-    }
-
-    private TlsBlockCipher createARIACipher(TlsCryptoParameters cryptoParams, int cipherKeySize, int macAlgorithm)
-        throws IOException, GeneralSecurityException
-    {
-        return new TlsBlockCipher(this, cryptoParams, createCBCBlockOperator(cryptoParams, "ARIA", true, cipherKeySize),
-            createCBCBlockOperator(cryptoParams, "ARIA", false, cipherKeySize), createMAC(cryptoParams, macAlgorithm),
-            createMAC(cryptoParams, macAlgorithm), cipherKeySize);
-    }
-
-    private TlsBlockCipher createCamelliaCipher(TlsCryptoParameters cryptoParams, int cipherKeySize, int macAlgorithm)
-        throws IOException, GeneralSecurityException
-    {
-        return new TlsBlockCipher(this, cryptoParams,
-            createCBCBlockOperator(cryptoParams, "Camellia", true, cipherKeySize),
-            createCBCBlockOperator(cryptoParams, "Camellia", false, cipherKeySize),
-            createMAC(cryptoParams, macAlgorithm), createMAC(cryptoParams, macAlgorithm), cipherKeySize);
-    }
-
-    private TlsBlockCipher createDESedeCipher(TlsCryptoParameters cryptoParams, int macAlgorithm)
-        throws IOException, GeneralSecurityException
-    {
-        return new TlsBlockCipher(this, cryptoParams, createCBCBlockOperator(cryptoParams, "DESede", true, 24),
-            createCBCBlockOperator(cryptoParams, "DESede", false, 24), createMAC(cryptoParams, macAlgorithm),
-            createMAC(cryptoParams, macAlgorithm), 24);
-    }
-
-    private TlsBlockCipher createSEEDCipher(TlsCryptoParameters cryptoParams, int macAlgorithm)
-        throws IOException, GeneralSecurityException
-    {
-        return new TlsBlockCipher(this, cryptoParams, createCBCBlockOperator(cryptoParams, "SEED", true, 16),
-            createCBCBlockOperator(cryptoParams, "SEED", false, 16), createMAC(cryptoParams, macAlgorithm),
-            createMAC(cryptoParams, macAlgorithm), 16);
-    }
-
-    private TlsBlockCipherImpl createCBCBlockOperator(TlsCryptoParameters cryptoParams, String algorithm, boolean forEncryption, int keySize)
-        throws GeneralSecurityException
+    protected TlsBlockCipherImpl createCBCBlockCipherImpl(TlsCryptoParameters cryptoParams, String algorithm,
+        int cipherKeySize, boolean forEncryption) throws GeneralSecurityException
     {
         String cipherName = algorithm + "/CBC/NoPadding";
 
         if (TlsImplUtils.isTLSv11(cryptoParams))
         {
-            return createBlockCipher(cipherName, algorithm, keySize, forEncryption);
+            return createBlockCipher(cipherName, algorithm, cipherKeySize, forEncryption);
         }
         else
         {
-            return createBlockCipherWithCBCImplicitIV(cipherName, algorithm, keySize, forEncryption);
+            return createBlockCipherWithCBCImplicitIV(cipherName, algorithm, cipherKeySize, forEncryption);
         }
     }
 
@@ -1137,32 +1191,56 @@ public class JcaTlsCrypto
             TlsAEADCipher.AEAD_GCM);
     }
 
-    String getDigestName(short hashAlgorithm)
+    protected TlsCipher createCipher_CBC(TlsCryptoParameters cryptoParams, String algorithm, int cipherKeySize,
+        int macAlgorithm) throws GeneralSecurityException, IOException
     {
-        String digestName;
-        switch (hashAlgorithm)
+        TlsBlockCipherImpl encrypt = createCBCBlockCipherImpl(cryptoParams, algorithm, cipherKeySize, true);
+        TlsBlockCipherImpl decrypt = createCBCBlockCipherImpl(cryptoParams, algorithm, cipherKeySize, false);
+
+        TlsHMAC clientMAC = createMAC(cryptoParams, macAlgorithm);
+        TlsHMAC serverMAC = createMAC(cryptoParams, macAlgorithm);
+
+        return new TlsBlockCipher(cryptoParams, encrypt, decrypt, clientMAC, serverMAC, cipherKeySize);
+    }
+
+    private TlsAEADCipher createCipher_SM4_CCM(TlsCryptoParameters cryptoParams)
+        throws IOException, GeneralSecurityException
+    {
+        int cipherKeySize = 16, macSize = 16;
+        return new TlsAEADCipher(cryptoParams, createAEADCipher("SM4/CCM/NoPadding", "SM4", cipherKeySize, true),
+            createAEADCipher("SM4/CCM/NoPadding", "SM4", cipherKeySize, false), cipherKeySize, macSize,
+            TlsAEADCipher.AEAD_CCM);
+    }
+
+    private TlsAEADCipher createCipher_SM4_GCM(TlsCryptoParameters cryptoParams)
+        throws IOException, GeneralSecurityException
+    {
+        int cipherKeySize = 16, macSize = 16;
+        return new TlsAEADCipher(cryptoParams, createAEADCipher("SM4/GCM/NoPadding", "SM4", cipherKeySize, true),
+            createAEADCipher("SM4/GCM/NoPadding", "SM4", cipherKeySize, false), cipherKeySize, macSize,
+            TlsAEADCipher.AEAD_GCM);
+    }
+
+    String getDigestName(int cryptoHashAlgorithm)
+    {
+        switch (cryptoHashAlgorithm)
         {
-        case HashAlgorithm.md5:
-            digestName = "MD5";
-            break;
-        case HashAlgorithm.sha1:
-            digestName = "SHA-1";
-            break;
-        case HashAlgorithm.sha224:
-            digestName = "SHA-224";
-            break;
-        case HashAlgorithm.sha256:
-            digestName = "SHA-256";
-            break;
-        case HashAlgorithm.sha384:
-            digestName = "SHA-384";
-            break;
-        case HashAlgorithm.sha512:
-            digestName = "SHA-512";
-            break;
+        case CryptoHashAlgorithm.md5:
+            return "MD5";
+        case CryptoHashAlgorithm.sha1:
+            return "SHA-1";
+        case CryptoHashAlgorithm.sha224:
+            return "SHA-224";
+        case CryptoHashAlgorithm.sha256:
+            return "SHA-256";
+        case CryptoHashAlgorithm.sha384:
+            return "SHA-384";
+        case CryptoHashAlgorithm.sha512:
+            return "SHA-512";
+        case CryptoHashAlgorithm.sm3:
+            return "SM3";
         default:
-            throw new IllegalArgumentException("invalid HashAlgorithm: " + HashAlgorithm.getText(hashAlgorithm));
+            throw new IllegalArgumentException("invalid CryptoHashAlgorithm: " + cryptoHashAlgorithm);
         }
-        return digestName;
     }
 }

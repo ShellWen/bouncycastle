@@ -25,7 +25,8 @@ public abstract class Ed448
     private static final long M28L = 0x0FFFFFFFL;
     private static final long M32L = 0xFFFFFFFFL;
 
-    private static final int POINT_BYTES = 57;
+    private static final int COORD_INTS = 14;
+    private static final int POINT_BYTES = COORD_INTS * 4 + 1;
     private static final int SCALAR_INTS = 14;
     private static final int SCALAR_BYTES = SCALAR_INTS * 4 + 1;
 
@@ -68,9 +69,11 @@ public abstract class Ed448
 
     private static final int WNAF_WIDTH_BASE = 7;
 
+    // scalarMultBase supports varying blocks, teeth, spacing so long as their product is in range [449, 479]
     private static final int PRECOMP_BLOCKS = 5;
     private static final int PRECOMP_TEETH = 5;
     private static final int PRECOMP_SPACING = 18;
+    private static final int PRECOMP_RANGE = PRECOMP_BLOCKS * PRECOMP_TEETH * PRECOMP_SPACING; // 448 < range < 480
     private static final int PRECOMP_POINTS = 1 << (PRECOMP_TEETH - 1);
     private static final int PRECOMP_MASK = PRECOMP_POINTS - 1;
 
@@ -98,7 +101,7 @@ public abstract class Ed448
         int[] u = new int[SCALAR_INTS];         decodeScalar(k, 0, u);
         int[] v = new int[SCALAR_INTS];         decodeScalar(s, 0, v);
 
-        Nat.mulAddTo(14, u, v, t);
+        Nat.mulAddTo(SCALAR_INTS, u, v, t);
 
         byte[] result = new byte[SCALAR_BYTES * 2];
         for (int i = 0; i < t.length; ++i)
@@ -160,21 +163,27 @@ public abstract class Ed448
             return false;
         }
 
-        int[] t = new int[14];
-        decode32(p, 0, t, 0, 14);
-        return !Nat.gte(14, t, P);
+        int[] t = new int[COORD_INTS];
+        decode32(p, 0, t, 0, COORD_INTS);
+        return !Nat.gte(COORD_INTS, t, P);
     }
 
-    private static boolean checkScalarVar(byte[] s)
+    private static boolean checkScalarVar(byte[] s, int[] n)
     {
         if (s[SCALAR_BYTES - 1] != 0x00)
         {
             return false;
         }
 
-        int[] n = new int[SCALAR_INTS];
         decodeScalar(s, 0, n);
         return !Nat.gte(SCALAR_INTS, n, L);
+    }
+
+    private static byte[] copy(byte[] buf, int off, int len)
+    {
+        byte[] result = new byte[len];
+        System.arraycopy(buf, off, result, 0, len);
+        return result;
     }
 
     public static Xof createPrehash()
@@ -221,7 +230,7 @@ public abstract class Ed448
 
     private static boolean decodePointVar(byte[] p, int pOff, boolean negate, PointExt r)
     {
-        byte[] py = Arrays.copyOfRange(p, pOff, pOff + POINT_BYTES);
+        byte[] py = copy(p, pOff, POINT_BYTES);
         if (!checkPointVar(py))
         {
             return false;
@@ -347,7 +356,8 @@ public abstract class Ed448
 
     private static byte[] getWnafVar(int[] n, int width)
     {
-//        assert n[SCALAR_INTS - 1] >>> 30 == 0;
+//        assert 0 <= n[SCALAR_INTS - 1] && n[SCALAR_INTS - 1] <= L[SCALAR_INTS - 1];
+//        assert 2 <= width && width <= 8;
 
         int[] t = new int[SCALAR_INTS * 2];
         {
@@ -363,9 +373,7 @@ public abstract class Ed448
 
         byte[] ws = new byte[447];
 
-        final int pow2 = 1 << width;
-        final int mask = pow2 - 1;
-        final int sign = pow2 >>> 1;
+        final int lead = 32 - width;
 
         int j = 0, carry = 0;
         for (int i = 0; i < t.length; ++i, j -= 16)
@@ -382,12 +390,10 @@ public abstract class Ed448
                     continue;
                 }
 
-                int digit = (word16 & mask) + carry;
-                carry = digit & sign;
-                digit -= (carry << 1);
-                carry >>>= (width - 1);
+                int digit = (word16 | 1) << lead;
+                carry = digit >>> 31;
 
-                ws[(i << 4) + j] = (byte)digit;
+                ws[(i << 4) + j] = (byte)(digit >> lead);
 
                 j += width;
             }
@@ -474,14 +480,16 @@ public abstract class Ed448
             throw new IllegalArgumentException("ctx");
         }
 
-        byte[] R = Arrays.copyOfRange(sig, sigOff, sigOff + POINT_BYTES);
-        byte[] S = Arrays.copyOfRange(sig, sigOff + POINT_BYTES, sigOff + SIGNATURE_SIZE);
+        byte[] R = copy(sig, sigOff, POINT_BYTES);
+        byte[] S = copy(sig, sigOff + POINT_BYTES, SCALAR_BYTES);
 
         if (!checkPointVar(R))
         {
             return false;
         }
-        if (!checkScalarVar(S))
+
+        int[] nS = new int[SCALAR_INTS];
+        if (!checkScalarVar(S, nS))
         {
             return false;
         }
@@ -503,9 +511,6 @@ public abstract class Ed448
 
         byte[] k = reduceScalar(h);
 
-        int[] nS = new int[SCALAR_INTS];
-        decodeScalar(S, 0, nS);
-
         int[] nA = new int[SCALAR_INTS];
         decodeScalar(k, 0, nA);
 
@@ -514,6 +519,11 @@ public abstract class Ed448
 
         byte[] check = new byte[POINT_BYTES];
         return 0 != encodePoint(pR, check, 0) && Arrays.areEqual(check, R);
+    }
+
+    private static boolean isNeutralElementVar(int[] x, int[] y, int[] z)
+    {
+        return F.isZeroVar(x) && F.areEqualVar(y, z);
     }
 
     private static void pointAdd(PointExt p, PointExt r)
@@ -713,6 +723,15 @@ public abstract class Ed448
         F.cnegate(sign, r.x);
     }
 
+    private static void pointLookup15(int[] table, PointExt r)
+    {
+        int off = F.SIZE * 3 * 7;
+
+        F.copy(table, off, r.x, 0);     off += F.SIZE;
+        F.copy(table, off, r.y, 0);     off += F.SIZE;
+        F.copy(table, off, r.z, 0);
+    }
+
     private static int[] pointPrecompute(PointExt p, int count)
     {
 //        assert count > 0;
@@ -774,6 +793,9 @@ public abstract class Ed448
             {
                 return;
             }
+
+//            assert PRECOMP_RANGE > 448;
+//            assert PRECOMP_RANGE < 480;
 
             PointExt p = new PointExt();
             F.copy(B_x, 0, p.x, 0);
@@ -1169,43 +1191,49 @@ public abstract class Ed448
         int[] n = new int[SCALAR_INTS];
         decodeScalar(k, 0, n);
 
-//        assert 0 == (n[0] & 3);
-//        assert 1 == n[SCALAR_INTS - 1] >>> 31;
-
-        Nat.shiftDownBits(SCALAR_INTS, n, 2, 0);
-
         // Recode the scalar into signed-digit form
         {
-            //int c1 =
-            Nat.cadd(SCALAR_INTS, ~n[0] & 1, n, L, n);      //assert c1 == 0;
+            int c1 = Nat.cadd(SCALAR_INTS, ~n[0] & 1, n, L, n);
             //int c2 =
-            Nat.shiftDownBit(SCALAR_INTS, n, 1);            //assert c2 == (1 << 31);
+            Nat.shiftDownBit(SCALAR_INTS, n, c1);           //assert c2 == (1 << 31);
+
+            // NOTE: Bit 448 is implicitly set after the signed-digit recoding
         }
 
         int[] table = pointPrecompute(p, 8);
         PointExt q = new PointExt();
 
-        pointLookup(n, 111, table, r);
+        // Replace first 4 doublings (2^4 * P) with 1 addition (P + 15 * P)
+        pointLookup15(table, r);
+        pointAdd(p, r);
 
-        for (int w = 110; w >= 0; --w)
+        int w = 111;
+        for (;;)
         {
+            pointLookup(n, w, table, q);
+            pointAdd(q, r);
+
+            if (--w < 0)
+            {
+                break;
+            }
+
             for (int i = 0; i < 4; ++i)
             {
                 pointDouble(r);
             }
-
-            pointLookup(n, w, table, q);
-            pointAdd(q, r);
-        }
-
-        for (int i = 0; i < 2; ++i)
-        {
-            pointDouble(r);
         }
     }
 
     private static void scalarMultBase(byte[] k, PointExt r)
     {
+        // Equivalent (but much slower)
+//        PointExt p = new PointExt();
+//        F.copy(B_x, 0, p.x, 0);
+//        F.copy(B_y, 0, p.y, 0);
+//        pointExtendXY(p);
+//        scalarMult(k, p, r);
+
         precompute();
 
         int[] n = new int[SCALAR_INTS + 1];
@@ -1213,7 +1241,8 @@ public abstract class Ed448
 
         // Recode the scalar into signed-digit form
         {
-            n[SCALAR_INTS] = 4 + Nat.cadd(SCALAR_INTS, ~n[0] & 1, n, L, n);
+            n[SCALAR_INTS] = (1 << (PRECOMP_RANGE - 448))
+                           + Nat.cadd(SCALAR_INTS, ~n[0] & 1, n, L, n);
             //int c =
             Nat.shiftDownBit(n.length, n, 0);
             //assert c == (1 << 31);
@@ -1292,6 +1321,36 @@ public abstract class Ed448
         }
         F.copy(p.x, 0, x, 0);
         F.copy(p.y, 0, y, 0);
+    }
+
+    private static void scalarMultOrderVar(PointExt p, PointExt r)
+    {
+        final int width = 5;
+
+        byte[] ws_p = getWnafVar(L, width);
+
+        PointExt[] tp = pointPrecomputeVar(p, 1 << (width - 2));
+
+        pointSetNeutral(r);
+
+        for (int bit = 446;;)
+        {
+            int wp = ws_p[bit];
+            if (wp != 0)
+            {
+                int sign = wp >> 31;
+                int index = (wp ^ sign) >>> 1;
+
+                pointAddVar((sign != 0), tp[index], r);
+            }
+
+            if (--bit < 0)
+            {
+                break;
+            }
+
+            pointDouble(r);
+        }
     }
 
     private static void scalarMultStrausVar(int[] nb, int[] np, PointExt p, PointExt r)
@@ -1388,6 +1447,39 @@ public abstract class Ed448
         byte phflag = 0x01;
 
         implSign(sk, skOff, pk, pkOff, ctx, phflag, m, 0, m.length, sig, sigOff);
+    }
+
+    public static boolean validatePublicKeyFull(byte[] pk, int pkOff)
+    {
+        PointExt p = new PointExt();
+        if (!decodePointVar(pk, pkOff, false, p))
+        {
+            return false;
+        }
+
+        F.normalize(p.x);
+        F.normalize(p.y);
+        F.normalize(p.z);
+
+        if (isNeutralElementVar(p.x, p.y, p.z))
+        {
+            return false;
+        }
+
+        PointExt r = new PointExt();
+        scalarMultOrderVar(p, r);
+
+        F.normalize(r.x);
+        F.normalize(r.y);
+        F.normalize(r.z);
+
+        return isNeutralElementVar(r.x, r.y, r.z);
+    }
+
+    public static boolean validatePublicKeyPartial(byte[] pk, int pkOff)
+    {
+        PointExt p = new PointExt();
+        return decodePointVar(pk, pkOff, false, p);
     }
 
     public static boolean verify(byte[] sig, int sigOff, byte[] pk, int pkOff, byte[] ctx, byte[] m, int mOff, int mLen)

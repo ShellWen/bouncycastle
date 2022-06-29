@@ -8,18 +8,28 @@ import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
+import org.bouncycastle.pqc.asn1.CMCEPrivateKey;
+import org.bouncycastle.pqc.asn1.CMCEPublicKey;
+import org.bouncycastle.pqc.asn1.McElieceCCA2PrivateKey;
 import org.bouncycastle.pqc.asn1.PQCObjectIdentifiers;
 import org.bouncycastle.pqc.asn1.SPHINCS256KeyParams;
 import org.bouncycastle.pqc.asn1.XMSSKeyParams;
 import org.bouncycastle.pqc.asn1.XMSSMTKeyParams;
 import org.bouncycastle.pqc.asn1.XMSSMTPrivateKey;
 import org.bouncycastle.pqc.asn1.XMSSPrivateKey;
+import org.bouncycastle.pqc.crypto.cmce.CMCEPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.frodo.FrodoPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.lms.Composer;
 import org.bouncycastle.pqc.crypto.lms.HSSPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.lms.LMSPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.mceliece.McElieceCCA2PrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.newhope.NHPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.picnic.PicnicPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.qtesla.QTESLAPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.saber.SABERPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.sike.SIKEPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.sphincs.SPHINCSPrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.sphincsplus.SPHINCSPlusPrivateKeyParameters;
 import org.bouncycastle.pqc.crypto.xmss.BDS;
 import org.bouncycastle.pqc.crypto.xmss.BDSStateMap;
 import org.bouncycastle.pqc.crypto.xmss.XMSSMTPrivateKeyParameters;
@@ -111,6 +121,40 @@ public class PrivateKeyInfoFactory
             AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(PKCSObjectIdentifiers.id_alg_hss_lms_hashsig);
             return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(encoding), attributes, pubEncoding);
         }
+        else if (privateKey instanceof SPHINCSPlusPrivateKeyParameters)
+        {
+            SPHINCSPlusPrivateKeyParameters params = (SPHINCSPlusPrivateKeyParameters)privateKey;
+
+            byte[] encoding = params.getEncoded();
+            byte[] pubEncoding = params.getEncodedPublicKey();
+
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.sphincsPlusOidLookup(params.getParameters()));
+            return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(encoding), attributes, pubEncoding);
+        }
+        else if (privateKey instanceof PicnicPrivateKeyParameters)
+        {
+
+            PicnicPrivateKeyParameters params = (PicnicPrivateKeyParameters)privateKey;
+
+            byte[] encoding = params.getEncoded();
+
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.picnicOidLookup(params.getParameters()));
+            return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(encoding), attributes);
+        }
+        else if (privateKey instanceof CMCEPrivateKeyParameters)
+        {
+            CMCEPrivateKeyParameters params = (CMCEPrivateKeyParameters)privateKey;
+
+            byte[] encoding = params.getEncoded();
+            //todo either make CMCEPrivateKey split the parameters from the private key or
+            // (current) Make CMCEPrivateKey take parts of the private key splitted in the params
+
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.mcElieceOidLookup(params.getParameters()));
+
+            CMCEPublicKey cmcePub = new CMCEPublicKey(params.reconstructPublicKey());
+            CMCEPrivateKey cmcePriv = new CMCEPrivateKey(0, params.getDelta(), params.getC(), params.getG(), params.getAlpha(), params.getS(), cmcePub);
+            return new PrivateKeyInfo(algorithmIdentifier, cmcePriv, attributes);
+        }
         else if (privateKey instanceof XMSSPrivateKeyParameters)
         {
             XMSSPrivateKeyParameters keyParams = (XMSSPrivateKeyParameters)privateKey;
@@ -128,6 +172,44 @@ public class PrivateKeyInfoFactory
                     Utils.xmssLookupTreeAlgID(keyParams.getTreeDigest())));
 
             return new PrivateKeyInfo(algorithmIdentifier, xmssmtCreateKeyStructure(keyParams), attributes);
+        }
+        else if (privateKey instanceof McElieceCCA2PrivateKeyParameters)
+        {
+            McElieceCCA2PrivateKeyParameters priv = (McElieceCCA2PrivateKeyParameters)privateKey;
+            McElieceCCA2PrivateKey mcEliecePriv = new McElieceCCA2PrivateKey(priv.getN(), priv.getK(), priv.getField(), priv.getGoppaPoly(), priv.getP(), Utils.getAlgorithmIdentifier(priv.getDigest()));
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(PQCObjectIdentifiers.mcElieceCca2);
+
+            return new PrivateKeyInfo(algorithmIdentifier, mcEliecePriv);
+        }
+        else if (privateKey instanceof FrodoPrivateKeyParameters)
+        {
+            FrodoPrivateKeyParameters params = (FrodoPrivateKeyParameters)privateKey;
+
+            byte[] encoding = params.getEncoded();
+
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.frodoOidLookup(params.getParameters()));
+
+            return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(encoding), attributes);
+        }
+        else if (privateKey instanceof SABERPrivateKeyParameters)
+        {
+            SABERPrivateKeyParameters params = (SABERPrivateKeyParameters)privateKey;
+
+            byte[] encoding = params.getEncoded();
+
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.saberOidLookup(params.getParameters()));
+
+            return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(encoding), attributes);
+        }
+        else if (privateKey instanceof SIKEPrivateKeyParameters)
+        {
+            SIKEPrivateKeyParameters params = (SIKEPrivateKeyParameters)privateKey;
+
+            byte[] encoding = params.getEncoded();
+
+            AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(Utils.sikeOidLookup(params.getParameters()));
+
+            return new PrivateKeyInfo(algorithmIdentifier, new DEROctetString(encoding), attributes);
         }
         else
         {

@@ -10,6 +10,9 @@ import java.util.List;
 import java.util.Random;
 import java.util.Set;
 
+import junit.framework.Test;
+import junit.framework.TestCase;
+import junit.framework.TestSuite;
 import org.bouncycastle.asn1.x9.ECNamedCurveTable;
 import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.asn1.x9.X9ECPoint;
@@ -24,10 +27,6 @@ import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.BigIntegers;
 import org.bouncycastle.util.Integers;
 import org.bouncycastle.util.encoders.Hex;
-
-import junit.framework.Test;
-import junit.framework.TestCase;
-import junit.framework.TestSuite;
 
 /**
  * Test class for {@link org.bouncycastle.math.ec.ECPoint ECPoint}. All
@@ -51,7 +50,7 @@ public class ECPointTest extends TestCase
      */
     public static class Fp
     {
-        private final BigInteger q = new BigInteger("29");
+        private final BigInteger q = new BigInteger("1063");
 
         private final BigInteger a = new BigInteger("4");
 
@@ -65,7 +64,7 @@ public class ECPointTest extends TestCase
 
         private final ECPoint infinity = curve.getInfinity();
 
-        private final int[] pointSource = { 5, 22, 16, 27, 13, 6, 14, 6 };
+        private final int[] pointSource = { 1, 5, 4, 10, 234, 1024, 817, 912 };
 
         private ECPoint[] p = new ECPoint[pointSource.length / 2];
 
@@ -432,15 +431,25 @@ public class ECPointTest extends TestCase
             BigInteger pMinusOne = p.subtract(ECConstants.ONE);
             BigInteger legendreExponent = p.shiftRight(1);
 
-            int count = 0;
-            while (count < 10)
+            ECFieldElement zero = c.fromBigInteger(BigInteger.ZERO);
+            assertEquals(zero, zero.sqrt());
+
+            ECFieldElement one = c.fromBigInteger(BigInteger.ONE);
+            assertEquals(one, one.sqrt());
+
+            for (int i = 0; i < 20; ++i)
             {
-                BigInteger nonSquare = BigIntegers.createRandomInRange(ECConstants.TWO, pMinusOne, secRand);
-                if (!nonSquare.modPow(legendreExponent, p).equals(ECConstants.ONE))
+                BigInteger x = BigIntegers.createRandomInRange(ECConstants.TWO, pMinusOne, secRand);
+                ECFieldElement fe = c.fromBigInteger(x);
+                ECFieldElement root = fe.sqrt();
+
+                if (root == null)
                 {
-                    ECFieldElement root = c.fromBigInteger(nonSquare).sqrt();
-                    assertNull(root);
-                    ++count;
+                    assertEquals(pMinusOne, x.modPow(legendreExponent, p));
+                }
+                else
+                {
+                    assertEquals(fe, root.square());
                 }
             }
         }

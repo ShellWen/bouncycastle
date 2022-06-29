@@ -3,7 +3,6 @@ package org.bouncycastle.cms;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
@@ -191,7 +190,7 @@ public class CMSAuthenticatedDataStreamGenerator
             eiGen.addObject(dataType);
 
             OutputStream octetStream = CMSUtils.createBEROctetOutputStream(
-                    eiGen.getRawOutputStream(), 0, false, bufferSize);
+                    eiGen.getRawOutputStream(), 0, true, bufferSize);
 
             OutputStream mOut;
 
@@ -293,7 +292,7 @@ public class CMSAuthenticatedDataStreamGenerator
             }
             else
             {
-                parameters = Collections.unmodifiableMap(new HashMap());                
+                parameters = Collections.EMPTY_MAP;
             }
 
             envGen.addObject(new DEROctetString(macCalculator.getMac()));

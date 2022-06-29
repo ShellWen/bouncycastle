@@ -2,13 +2,13 @@ package org.bouncycastle.tls.crypto.impl.bc;
 
 import org.bouncycastle.crypto.Digest;
 import org.bouncycastle.crypto.Signer;
+import org.bouncycastle.crypto.digests.NullDigest;
 import org.bouncycastle.crypto.encodings.PKCS1Encoding;
 import org.bouncycastle.crypto.engines.RSABlindedEngine;
 import org.bouncycastle.crypto.params.RSAKeyParameters;
 import org.bouncycastle.crypto.signers.GenericSigner;
 import org.bouncycastle.crypto.signers.RSADigestSigner;
 import org.bouncycastle.tls.DigitallySigned;
-import org.bouncycastle.tls.HashAlgorithm;
 import org.bouncycastle.tls.SignatureAlgorithm;
 import org.bouncycastle.tls.SignatureAndHashAlgorithm;
 import org.bouncycastle.tls.TlsUtils;
@@ -24,11 +24,11 @@ public class BcTlsRSAVerifier
         super(crypto, publicKey);
     }
 
-    public boolean verifyRawSignature(DigitallySigned signedParams, byte[] hash)
+    public boolean verifyRawSignature(DigitallySigned digitallySigned, byte[] hash)
     {
-        Digest nullDigest = crypto.createDigest(HashAlgorithm.none);
+        Digest nullDigest = new NullDigest();
 
-        SignatureAndHashAlgorithm algorithm = signedParams.getAlgorithm();
+        SignatureAndHashAlgorithm algorithm = digitallySigned.getAlgorithm();
         Signer signer;
         if (algorithm != null)
         {
@@ -53,6 +53,6 @@ public class BcTlsRSAVerifier
         }
         signer.init(false, publicKey);
         signer.update(hash, 0, hash.length);
-        return signer.verifySignature(signedParams.getSignature());
+        return signer.verifySignature(digitallySigned.getSignature());
     }
 }

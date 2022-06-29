@@ -3,7 +3,7 @@ package org.bouncycastle.cms;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.Iterator;
 
 import org.bouncycastle.asn1.ASN1EncodableVector;
@@ -19,6 +19,7 @@ import org.bouncycastle.asn1.cms.EncryptedContentInfo;
 import org.bouncycastle.asn1.cms.EnvelopedData;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.operator.GenericKey;
+import org.bouncycastle.operator.OutputAEADEncryptor;
 import org.bouncycastle.operator.OutputEncryptor;
 
 /**
@@ -68,6 +69,13 @@ public class CMSEnvelopedDataGenerator
             content.write(cOut);
 
             cOut.close();
+
+            if (contentEncryptor instanceof OutputAEADEncryptor)
+            {
+                byte[] mac = ((OutputAEADEncryptor)contentEncryptor).getMAC();
+
+                bOut.write(mac, 0, mac.length);
+            }
         }
         catch (IOException e)
         {
@@ -97,7 +105,7 @@ public class CMSEnvelopedDataGenerator
         ASN1Set unprotectedAttrSet = null;
         if (unprotectedAttributeGenerator != null)
         {
-            AttributeTable attrTable = unprotectedAttributeGenerator.getAttributes(new HashMap());
+            AttributeTable attrTable = unprotectedAttributeGenerator.getAttributes(Collections.EMPTY_MAP);
 
             unprotectedAttrSet = new BERSet(attrTable.toASN1EncodableVector());
         }

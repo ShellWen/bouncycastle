@@ -2,10 +2,10 @@ package org.bouncycastle.tls.crypto.impl.bc;
 
 import org.bouncycastle.crypto.DSA;
 import org.bouncycastle.crypto.Signer;
+import org.bouncycastle.crypto.digests.NullDigest;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
 import org.bouncycastle.crypto.signers.DSADigestSigner;
 import org.bouncycastle.tls.DigitallySigned;
-import org.bouncycastle.tls.HashAlgorithm;
 import org.bouncycastle.tls.SignatureAndHashAlgorithm;
 
 /**
@@ -19,21 +19,19 @@ public abstract class BcTlsDSSVerifier
         super(crypto, publicKey);
     }
 
-    protected abstract DSA createDSAImpl(short hashAlgorithm);
+    protected abstract DSA createDSAImpl();
 
     protected abstract short getSignatureAlgorithm();
 
-    public boolean verifyRawSignature(DigitallySigned signedParams, byte[] hash)
+    public boolean verifyRawSignature(DigitallySigned digitallySigned, byte[] hash)
     {
-        SignatureAndHashAlgorithm algorithm = signedParams.getAlgorithm();
+        SignatureAndHashAlgorithm algorithm = digitallySigned.getAlgorithm();
         if (algorithm != null && algorithm.getSignature() != getSignatureAlgorithm())
         {
             throw new IllegalStateException("Invalid algorithm: " + algorithm);
         }
 
-        short hashAlgorithm = algorithm == null ? HashAlgorithm.sha1 : algorithm.getHash();
-
-        Signer signer = new DSADigestSigner(createDSAImpl(hashAlgorithm), crypto.createDigest(HashAlgorithm.none));
+        Signer signer = new DSADigestSigner(createDSAImpl(), new NullDigest());
         signer.init(false, publicKey);
         if (algorithm == null)
         {
@@ -44,6 +42,6 @@ public abstract class BcTlsDSSVerifier
         {
             signer.update(hash, 0, hash.length);
         }
-        return signer.verifySignature(signedParams.getSignature());
+        return signer.verifySignature(digitallySigned.getSignature());
     }
 }

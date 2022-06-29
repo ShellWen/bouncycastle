@@ -17,8 +17,8 @@ import org.bouncycastle.pqc.math.linearalgebra.IntegerFunctions;
 /**
  * This class implements the Kobara/Imai conversion of the McEliecePKCS. This is
  * a conversion of the McEliecePKCS which is CCA2-secure. For details, see D.
- * Engelbert, R. Overbeck, A. Schmidt, "A summary of the development of the
- * McEliece Cryptosystem", technical report.
+ * Engelbert, R. Overbeck, A. Schmidt, "A Summary of McEliece-Type Cryptosystems and their Security", technical report.
+ * https://www.degruyter.com/document/doi/10.1515/JMC.2007.009/html
  */
 public class McElieceKobaraImaiCipher
     implements MessageEncryptor
@@ -234,6 +234,7 @@ public class McElieceKobaraImaiCipher
 
         int c2Len = messDigest.getDigestSize();
         int c4Len = k >> 3;
+        int c5Len = (IntegerFunctions.binomial(n, t).bitLength() - 1) >> 3;
         int c6Len = input.length - nDiv8;
 
         // split cipher text (c6||encC4), where c6 may be empty
@@ -268,6 +269,14 @@ public class McElieceKobaraImaiCipher
 
         // compute c5 = Conv^-1(z)
         byte[] c5 = Conversions.decode(n, t, z);
+
+        // if c5 is shorter than expected, pad with leading zeroes
+        if (c5.length < c5Len)
+        {
+            byte[] paddedC5 = new byte[c5Len];
+            System.arraycopy(c5, 0, paddedC5, c5Len - c5.length, c5.length);
+            c5 = paddedC5;
+        }
 
         // compute (c6||c5||c4)
         byte[] c6c5c4 = ByteUtils.concatenate(c6, c5);

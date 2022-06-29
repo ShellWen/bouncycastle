@@ -10,6 +10,8 @@ import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
 import org.bouncycastle.bcpg.SymmetricKeyEncSessionPacket;
 import org.bouncycastle.openpgp.operator.PBEDataDecryptorFactory;
 import org.bouncycastle.openpgp.operator.PGPDataDecryptor;
+import org.bouncycastle.openpgp.operator.SessionKeyDataDecryptorFactory;
+import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.io.TeeInputStream;
 
 /**
@@ -22,18 +24,18 @@ import org.bouncycastle.util.io.TeeInputStream;
 public class PGPPBEEncryptedData
     extends PGPEncryptedData
 {
-    SymmetricKeyEncSessionPacket    keyData;
+    SymmetricKeyEncSessionPacket keyData;
 
     /**
-     * Construct a PBE encryped data object.
+     * Construct a PBE encrypted data object.
      *
      * @param keyData the PBE key data packet associated with the encrypted data in the PGP object
-     *            stream.
+     *                stream.
      * @param encData the encrypted data.
      */
     PGPPBEEncryptedData(
-        SymmetricKeyEncSessionPacket    keyData,
-        InputStreamPacket               encData)
+        SymmetricKeyEncSessionPacket keyData,
+        InputStreamPacket encData)
     {
         super(encData);
 
@@ -45,26 +47,42 @@ public class PGPPBEEncryptedData
      *
      * @param dataDecryptorFactory decryptor factory to use to recover the session data.
      * @return the identifier of the {@link SymmetricKeyAlgorithmTags encryption algorithm} used to
-     *         encrypt this object.
+     * encrypt this object.
      * @throws PGPException if the session data cannot be recovered.
      */
     public int getSymmetricAlgorithm(
         PBEDataDecryptorFactory dataDecryptorFactory)
         throws PGPException
     {
-        byte[]       key = dataDecryptorFactory.makeKeyFromPassPhrase(keyData.getEncAlgorithm(), keyData.getS2K());
-        byte[]       sessionData = dataDecryptorFactory.recoverSessionData(keyData.getEncAlgorithm(), key, keyData.getSecKeyData());
+        byte[] key = dataDecryptorFactory.makeKeyFromPassPhrase(keyData.getEncAlgorithm(), keyData.getS2K());
+        byte[] sessionData = dataDecryptorFactory.recoverSessionData(keyData.getEncAlgorithm(), key, keyData.getSecKeyData());
 
         return sessionData[0];
     }
 
     /**
+     * Return the symmetric session key required to decrypt the data protected by this object.
+     *
+     * @param dataDecryptorFactory decryptor factory used to recover the session data.
+     * @return session key
+     * @throws PGPException if the session data cannot be recovered
+     */
+    public PGPSessionKey getSessionKey(PBEDataDecryptorFactory dataDecryptorFactory)
+        throws PGPException
+    {
+        byte[] key = dataDecryptorFactory.makeKeyFromPassPhrase(keyData.getEncAlgorithm(), keyData.getS2K());
+        byte[] sessionData = dataDecryptorFactory.recoverSessionData(keyData.getEncAlgorithm(), key, keyData.getSecKeyData());
+
+        return new PGPSessionKey(sessionData[0] & 0xff, Arrays.copyOfRange(sessionData, 1, sessionData.length));
+    }
+
+    /**
      * Open an input stream which will provide the decrypted data protected by this object.
-     * 
+     *
      * @param dataDecryptorFactory decryptor factory to use to recover the session data and provide
-     *            the stream.
+     *                             the stream.
      * @return the resulting decrypted input stream, probably containing a sequence of PGP data
-     *         objects.
+     * objects.
      * @throws PGPException if the session data cannot be recovered or the stream cannot be created.
      */
     public InputStream getDataStream(
@@ -73,18 +91,55 @@ public class PGPPBEEncryptedData
     {
         try
         {
-            int          keyAlgorithm = keyData.getEncAlgorithm();
-            byte[]       key = dataDecryptorFactory.makeKeyFromPassPhrase(keyAlgorithm, keyData.getS2K());
-            boolean      withIntegrityPacket = encData instanceof SymmetricEncIntegrityPacket;
+            PGPSessionKey sessionKey = getSessionKey(dataDecryptorFactory);
+            boolean withIntegrityPacket = encData instanceof SymmetricEncIntegrityPacket;
+            PGPDataDecryptor dataDecryptor = dataDecryptorFactory.createDataDecryptor(withIntegrityPacket, sessionKey.getAlgorithm(), sessionKey.getKey());
 
-            byte[]       sessionData = dataDecryptorFactory.recoverSessionData(keyData.getEncAlgorithm(), key, keyData.getSecKeyData());
-            byte[]       sessionKey = new byte[sessionData.length - 1];
+            return getDataStream(withIntegrityPacket, dataDecryptor);
+        }
+        catch (PGPException e)
+        {
+            throw e;
+        }
+        catch (Exception e)
+        {
+            throw new PGPException("Exception creating cipher", e);
+        }
+    }
 
-            System.arraycopy(sessionData, 1, sessionKey, 0, sessionKey.length);
+    public InputStream getDataStream(
+        SessionKeyDataDecryptorFactory dataDecryptorFactory)
+        throws PGPException
+    {
+        try
+        {
+            PGPSessionKey sessionKey = dataDecryptorFactory.getSessionKey();
+            boolean withIntegrityPacket = encData instanceof SymmetricEncIntegrityPacket;
+            PGPDataDecryptor dataDecryptor = dataDecryptorFactory.createDataDecryptor(withIntegrityPacket, sessionKey.getAlgorithm(), sessionKey.getKey());
 
-            PGPDataDecryptor dataDecryptor = dataDecryptorFactory.createDataDecryptor(withIntegrityPacket, sessionData[0] & 0xff, sessionKey);
+            return getDataStream(withIntegrityPacket, dataDecryptor);
+        }
+        catch (PGPException e)
+        {
+            throw e;
+        }
+        catch (Exception e)
+        {
+            throw new PGPException("Exception creating cipher", e);
+        }
+    }
 
-            encStream = new BCPGInputStream(dataDecryptor.getInputStream(encData.getInputStream()));
+    private InputStream getDataStream(
+        boolean withIntegrityPacket,
+        PGPDataDecryptor dataDecryptor)
+        throws PGPException
+    {
+        try
+        {
+            BCPGInputStream encIn = encData.getInputStream();
+            encIn.mark(dataDecryptor.getBlockSize() + 2); // iv + 2 octets checksum
+
+            encStream = new BCPGInputStream(dataDecryptor.getInputStream(encIn));
 
             if (withIntegrityPacket)
             {
@@ -98,7 +153,7 @@ public class PGPPBEEncryptedData
             byte[] iv = new byte[dataDecryptor.getBlockSize()];
             for (int i = 0; i != iv.length; i++)
             {
-                int    ch = encStream.read();
+                int ch = encStream.read();
 
                 if (ch < 0)
                 {
@@ -108,8 +163,8 @@ public class PGPPBEEncryptedData
                 iv[i] = (byte)ch;
             }
 
-            int    v1 = encStream.read();
-            int    v2 = encStream.read();
+            int v1 = encStream.read();
+            int v2 = encStream.read();
 
             if (v1 < 0 || v2 < 0)
             {
@@ -120,8 +175,8 @@ public class PGPPBEEncryptedData
             // Note: the oracle attack on "quick check" bytes is not deemed
             // a security risk for PBE (see PGPPublicKeyEncryptedData)
 
-            boolean repeatCheckPassed = iv[iv.length - 2] == (byte) v1
-                    && iv[iv.length - 1] == (byte) v2;
+            boolean repeatCheckPassed = iv[iv.length - 2] == (byte)v1
+                && iv[iv.length - 1] == (byte)v2;
 
             // Note: some versions of PGP appear to produce 0 for the extra
             // bytes rather than repeating the two previous bytes
@@ -129,6 +184,7 @@ public class PGPPBEEncryptedData
 
             if (!repeatCheckPassed && !zeroesCheckPassed)
             {
+                encIn.reset();
                 throw new PGPDataValidationException("data check failed.");
             }
 
@@ -142,5 +198,15 @@ public class PGPPBEEncryptedData
         {
             throw new PGPException("Exception creating cipher", e);
         }
+    }
+
+    public int getVersion()
+    {
+        return keyData.getVersion();
+    }
+
+    public int getAlgorithm()
+    {
+        return keyData.getEncAlgorithm();
     }
 }

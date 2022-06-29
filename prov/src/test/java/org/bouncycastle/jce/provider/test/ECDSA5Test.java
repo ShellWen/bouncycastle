@@ -37,13 +37,15 @@ import java.security.spec.X509EncodedKeySpec;
 
 import javax.crypto.KeyAgreement;
 
+import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
-import org.bouncycastle.asn1.bsi.BSIObjectIdentifiers;
-import org.bouncycastle.asn1.eac.EACObjectIdentifiers;
+import org.bouncycastle.asn1.DERSequence;
+import org.bouncycastle.internal.asn1.bsi.BSIObjectIdentifiers;
+import org.bouncycastle.internal.asn1.eac.EACObjectIdentifiers;
 import org.bouncycastle.asn1.nist.NISTNamedCurves;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
@@ -358,7 +360,7 @@ public class ECDSA5Test
         }
         catch (InvalidAlgorithmParameterException e)
         {
-            isEquals("unknown curve OID: 1.2.3.4.5", e.getMessage());
+            isEquals("unknown curve name: 1.2.3.4.5", e.getMessage());
         }
 
         kp = kpGen.generateKeyPair();
@@ -384,12 +386,18 @@ public class ECDSA5Test
 
         testBsiAlgorithms(kp, data, cvcAlgs, cvcOids);
 
-        String[] plainAlgs = {"SHA1WITHPLAIN-ECDSA", "SHA224WITHPLAIN-ECDSA",
+        String[] plainAlgs = {
+            "SHA1WITHPLAIN-ECDSA", "SHA224WITHPLAIN-ECDSA",
             "SHA256WITHPLAIN-ECDSA", "SHA384WITHPLAIN-ECDSA",
-            "SHA512WITHPLAIN-ECDSA", "RIPEMD160WITHPLAIN-ECDSA"};
-        String[] plainOids = {BSIObjectIdentifiers.ecdsa_plain_SHA1.getId(), BSIObjectIdentifiers.ecdsa_plain_SHA224.getId(),
+            "SHA512WITHPLAIN-ECDSA", "RIPEMD160WITHPLAIN-ECDSA",
+            "SHA3-224WITHPLAIN-ECDSA", "SHA3-256WITHPLAIN-ECDSA",
+            "SHA3-384WITHPLAIN-ECDSA", "SHA3-512WITHPLAIN-ECDSA"};
+        String[] plainOids = {
+            BSIObjectIdentifiers.ecdsa_plain_SHA1.getId(), BSIObjectIdentifiers.ecdsa_plain_SHA224.getId(),
             BSIObjectIdentifiers.ecdsa_plain_SHA256.getId(), BSIObjectIdentifiers.ecdsa_plain_SHA384.getId(),
-            BSIObjectIdentifiers.ecdsa_plain_SHA512.getId(), BSIObjectIdentifiers.ecdsa_plain_RIPEMD160.getId()};
+            BSIObjectIdentifiers.ecdsa_plain_SHA512.getId(), BSIObjectIdentifiers.ecdsa_plain_RIPEMD160.getId(),
+            BSIObjectIdentifiers.ecdsa_plain_SHA3_224.getId(), BSIObjectIdentifiers.ecdsa_plain_SHA3_256.getId(),
+            BSIObjectIdentifiers.ecdsa_plain_SHA3_384.getId(), BSIObjectIdentifiers.ecdsa_plain_SHA3_512.getId()};
 
         testBsiAlgorithms(kp, data, plainAlgs, plainOids);
 
@@ -1001,7 +1009,7 @@ public class ECDSA5Test
         }
         catch (InvalidAlgorithmParameterException e)
         {
-            if (!"unknown curve OID: 1.1".equals(e.getMessage()))
+            if (!"unknown curve name: 1.1".equals(e.getMessage()))
             {
                 fail("OID message check failed");
             }
@@ -1227,6 +1235,67 @@ public class ECDSA5Test
         }
     }
 
+    // TODO: sample vectors appear to be broken
+    public void testSHAKE128DSA()
+        throws Exception
+    {
+        byte[] msg = Hex.decode("1521A4490C456E4859870A638C8E78B0320E3643C1096D99C7AE38AE3F17C1932E805E949EADA41D33B9C2463756F72D3FC0C36389902B73B543F7B062A2021BCD41BA83BCB770F572BFD4ED7D23DDBF5E9B5142338ED4E8041A4C0FA316DC08A64069141656C99002F6F25D792F8E02529BC73FABA95B3755D0D9854873EC64");
+        AlgorithmParameters algorithmParameters = AlgorithmParameters.getInstance("EC", "BC");
+
+        algorithmParameters.init(new ECGenParameterSpec("P-256"));
+
+        ECParameterSpec ecSpec = algorithmParameters.getParameterSpec(ECParameterSpec.class);
+        KeyFactory keyFact = KeyFactory.getInstance("EC", "BC");
+
+        ECPublicKey pubKey = (ECPublicKey)keyFact.generatePublic(new ECPublicKeySpec(new ECPoint(
+            new BigInteger("46D2851674832EC269BC592F7342092AA581B6C15BE047CA17803A3E2E53614D", 16),
+            new BigInteger("3F5D4830934156F804D2910D261D84A86B4F51100B9B35984091CEC060F6BA9D", 16)), ecSpec));
+
+        byte[] sig = new DERSequence(new ASN1Encodable[]
+        {
+            new ASN1Integer(new BigInteger("62CADB91153E97F69E885ED1693232552B83049ADC2F97A2100FE8FD6EFBAA21", 16)),
+            new ASN1Integer(new BigInteger("891010A9260CD81FA87816BA7DA02C9E0020A46537E0C382BFA1BC76E198A29A", 16)),
+        }).getEncoded();
+        
+        Signature sg = Signature.getInstance("SHAKE128withECDSA", "BC");
+
+        sg.initVerify(pubKey);
+
+        sg.update(msg);
+
+        isTrue("shake128 failed", sg.verify(sig));
+    }
+
+    public void testSHAKE256DSA()
+        throws Exception
+    {
+        byte[] msg = Hex.decode("2CA45663682EF7D774B72945C26F74E305A714986E9F265DD9A4BB2E957E2F45A1D4B974F7C3373695780002C6BD69D65F806ACA5B4E80E5184D279F658D5075BAF0032B45D46470726FE7EF853FAB014320BBE5F4E935A400FE485B33A9A67D68864272BEADF71B665EB391F380E461A95B480B0AB8FBFD62C1D83CEFCACE25");
+        AlgorithmParameters algorithmParameters = AlgorithmParameters.getInstance("EC", "BC");
+
+        algorithmParameters.init(new ECGenParameterSpec("P-224"));
+
+        ECParameterSpec ecSpec = algorithmParameters.getParameterSpec(ECParameterSpec.class);
+        KeyFactory keyFact = KeyFactory.getInstance("EC", "BC");
+
+        ECPublicKey pubKey = (ECPublicKey)keyFact.generatePublic(new ECPublicKeySpec(new ECPoint(
+            new BigInteger("FDFB6E2FB31A08B55CCD95B09F9741024360061DC709A470C3FE766B", 16),
+            new BigInteger("41DEAEE644B6177EBD27AF2E4663139D49B8DEB4CA318D68E699704A", 16)), ecSpec));
+
+        byte[] sig = new DERSequence(new ASN1Encodable[]
+        {
+            new ASN1Integer(new BigInteger("C9219465AE37E79CD2706FDDB1EEB46C19971D9E09477658E3A559B9", 16)),
+            new ASN1Integer(new BigInteger("264DF50616012D8026877BE6BC213DDB068C2D67FCE3DAF5B7D1CA58", 16)),
+        }).getEncoded();
+
+        Signature sg = Signature.getInstance("SHAKE256withECDSA", "BC");
+
+        sg.initVerify(pubKey);
+
+        sg.update(msg);
+
+        isTrue("shake256 failed", sg.verify(sig));
+    }
+
     protected BigInteger[] derDecode(
         byte[] encoding)
         throws IOException
@@ -1269,6 +1338,8 @@ public class ECDSA5Test
         testNamedCurveInKeyFactory();
         testKeyFactory();
         pointCompressionTest();
+        testSHAKE256DSA();
+//        testSHAKE128DSA();
     }
 
     public static void main(

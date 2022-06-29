@@ -1,5 +1,6 @@
 package org.bouncycastle.bcpg;
 
+import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -10,7 +11,15 @@ import org.bouncycastle.util.Strings;
 /**
  * reader for Base64 armored objects - read the headers and then start returning
  * bytes when the data is reached. An IOException is thrown if the CRC check
- * fails.
+ * is detected and fails.
+ * <p>
+ * By default a missing CRC will not cause an exception. To force CRC detection use:
+ * <pre>
+ *     ArmoredInputStream aIn = ...
+ *
+ *     aIn.setDetectMissingCRC(true);
+ * </pre>
+ * </p>
  */
 public class ArmoredInputStream
     extends InputStream
@@ -53,7 +62,7 @@ public class ArmoredInputStream
      *
      * @return the offset the data starts in out.
      */
-    private int decode(
+    private static int decode(
         int      in0,
         int      in1,
         int      in2,
@@ -117,6 +126,12 @@ public class ArmoredInputStream
             return 0;
         }
     }
+
+    /*
+     * Ignore missing CRC checksums.
+     * https://tests.sequoia-pgp.org/#ASCII_Armor suggests that missing CRC sums do not invalidate the message.
+     */
+    private boolean detectMissingChecksum = false;
 
     InputStream    in;
     boolean        start = true;
@@ -210,13 +225,15 @@ public class ArmoredInputStream
 
         if (headerFound)
         {
-            StringBuffer    buf = new StringBuffer("-");
             boolean         eolReached = false;
             boolean         crLf = false;
-            
+
+            ByteArrayOutputStream buf = new ByteArrayOutputStream();
+            buf.write('-');
+
             if (restart)    // we've had to look ahead two '-'
             {
-                buf.append('-');
+                buf.write('-');
             }
             
             while ((c = in.read()) >= 0)
@@ -240,18 +257,22 @@ public class ArmoredInputStream
                 }
                 if (c == '\r' || (last != '\r' && c == '\n'))
                 {
-                    String line = buf.toString();
+                    String line = Strings.fromUTF8ByteArray(buf.toByteArray());
                     if (line.trim().length() == 0)
                     {
                         break;
                     }
+                    if (headerList.size() != 0 && line.indexOf(':') < 0)
+                    {
+                        throw new IOException("invalid armor header");
+                    }
                     headerList.add(line);
-                    buf.setLength(0);
+                    buf.reset();
                 }
 
                 if (c != '\n' && c != '\r')
                 {
-                    buf.append((char)c);
+                    buf.write(c);
                     eolReached = false;
                 }
                 else
@@ -267,7 +288,11 @@ public class ArmoredInputStream
             
             if (crLf)
             {
-                in.read(); // skip last \n
+                int nl = in.read(); // skip last \n
+                if (nl != '\n')
+                {
+                    throw new IOException("inconsistent line endings in headers");
+                }
             }
         }
         
@@ -327,7 +352,7 @@ public class ArmoredInputStream
     {
         int    c = in.read();
         
-        while (c == ' ' || c == '\t')
+        while (c == ' ' || c == '\t' || c == '\f' || c == '\u000B') // \u000B ~ \v
         {
             c = in.read();
         }
@@ -435,7 +460,10 @@ public class ArmoredInputStream
                     }
                     else
                     {
-                        throw new IOException("no crc found in armored message.");
+                        if (detectMissingChecksum)
+                        {
+                            throw new IOException("no crc found in armored message");
+                        }
                     }
                 }
                 else if (c == '-')        // end of record reached
@@ -448,9 +476,9 @@ public class ArmoredInputStream
                         }
                     }
 
-                    if (!crcFound)
+                    if (!crcFound && detectMissingChecksum)
                     {
-                        throw new IOException("crc check not found.");
+                        throw new IOException("crc check not found");
                     }
 
                     crcFound = false;
@@ -489,10 +517,85 @@ public class ArmoredInputStream
 
         return c;
     }
-    
+
+    /**
+     * Reads up to <code>len</code> bytes of data from the input stream into
+     * an array of bytes.  An attempt is made to read as many as
+     * <code>len</code> bytes, but a smaller number may be read.
+     * The number of bytes actually read is returned as an integer.
+     *
+     * The first byte read is stored into element <code>b[off]</code>, the
+     * next one into <code>b[off+1]</code>, and so on. The number of bytes read
+     * is, at most, equal to <code>len</code>.
+     *
+     * NOTE: We need to override the custom behavior of Java's {@link InputStream#read(byte[], int, int)},
+     * as the upstream method silently swallows {@link IOException IOExceptions}.
+     * This would cause CRC checksum errors to go unnoticed.
+     *
+     * @see <a href="https://github.com/bcgit/bc-java/issues/998">Related BC bug report</a>
+     * @param b byte array
+     * @param off offset at which we start writing data to the array
+     * @param len number of bytes we write into the array
+     * @return total number of bytes read into the buffer
+     *
+     * @throws IOException if an exception happens AT ANY POINT
+     */
+    public int read(byte[] b, int off, int len) throws IOException
+    {
+        checkIndexSize(b.length, off, len);
+
+        if (len == 0)
+        {
+            return 0;
+        }
+
+        int c = read();
+        if (c == -1)
+        {
+            return -1;
+        }
+        b[off] = (byte)c;
+
+        int i = 1;
+        for (; i < len ; i++)
+        {
+            c = read();
+            if (c == -1)
+            {
+                break;
+            }
+            b[off + i] = (byte)c;
+        }
+        return i;
+    }
+
+    private void checkIndexSize(int size, int off, int len)
+    {
+        if (off < 0 || len < 0)
+        {
+            throw new IndexOutOfBoundsException("Offset and length cannot be negative.");
+        }
+        if (off > size - len)
+        {
+            throw new IndexOutOfBoundsException("Invalid offset and length.");
+        }
+    }
+
     public void close()
         throws IOException
     {
         in.close();
+    }
+
+    /**
+     * Change how the stream should react if it encounters missing CRC checksum.
+     * The default value is false (ignore missing CRC checksums). If the behavior is set to true,
+     * an {@link IOException} will be thrown if a missing CRC checksum is encountered.
+     *
+     * @param detectMissing ignore missing CRC sums
+     */
+    public void setDetectMissingCRC(boolean detectMissing)
+    {
+        this.detectMissingChecksum = detectMissing;
     }
 }

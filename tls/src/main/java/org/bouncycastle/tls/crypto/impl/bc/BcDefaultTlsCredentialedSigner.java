@@ -10,8 +10,8 @@ import org.bouncycastle.crypto.params.Ed448PrivateKeyParameters;
 import org.bouncycastle.crypto.params.RSAKeyParameters;
 import org.bouncycastle.tls.Certificate;
 import org.bouncycastle.tls.DefaultTlsCredentialedSigner;
-import org.bouncycastle.tls.SignatureAlgorithm;
 import org.bouncycastle.tls.SignatureAndHashAlgorithm;
+import org.bouncycastle.tls.SignatureScheme;
 import org.bouncycastle.tls.crypto.TlsCryptoParameters;
 import org.bouncycastle.tls.crypto.TlsSigner;
 
@@ -41,16 +41,10 @@ public class BcDefaultTlsCredentialedSigner
 
             if (signatureAndHashAlgorithm != null)
             {
-                short signatureAlgorithm = signatureAndHashAlgorithm.getSignature();
-                switch (signatureAlgorithm)
+                int signatureScheme = SignatureScheme.from(signatureAndHashAlgorithm);
+                if (SignatureScheme.isRSAPSS(signatureScheme))
                 {
-                case SignatureAlgorithm.rsa_pss_pss_sha256:
-                case SignatureAlgorithm.rsa_pss_pss_sha384:
-                case SignatureAlgorithm.rsa_pss_pss_sha512:
-                case SignatureAlgorithm.rsa_pss_rsae_sha256:
-                case SignatureAlgorithm.rsa_pss_rsae_sha384:
-                case SignatureAlgorithm.rsa_pss_rsae_sha512:
-                    return new BcTlsRSAPSSSigner(crypto, privKeyRSA, signatureAlgorithm);
+                    return new BcTlsRSAPSSSigner(crypto, privKeyRSA, signatureScheme);
                 }
             }
 
@@ -72,7 +66,26 @@ public class BcDefaultTlsCredentialedSigner
         }
         else if (privateKey instanceof ECPrivateKeyParameters)
         {
-            signer = new BcTlsECDSASigner(crypto, (ECPrivateKeyParameters)privateKey);
+            ECPrivateKeyParameters privKeyEC = (ECPrivateKeyParameters)privateKey;
+
+            if (signatureAndHashAlgorithm != null)
+            {
+                // TODO[RFC 8998]
+//                short signatureAlgorithm = signatureAndHashAlgorithm.getSignature();
+//                switch (signatureAlgorithm)
+//                {
+//                case SignatureAlgorithm.sm2:
+//                    return new BcTlsSM2Signer(crypto, privKeyEC, Strings.toByteArray("TLSv1.3+GM+Cipher+Suite"));
+//                }
+
+                int signatureScheme = SignatureScheme.from(signatureAndHashAlgorithm);
+                if (SignatureScheme.isECDSA(signatureScheme))
+                {
+                    return new BcTlsECDSA13Signer(crypto, privKeyEC, signatureScheme);
+                }
+            }
+
+            signer = new BcTlsECDSASigner(crypto, privKeyEC);
         }
         else if (privateKey instanceof Ed25519PrivateKeyParameters)
         {

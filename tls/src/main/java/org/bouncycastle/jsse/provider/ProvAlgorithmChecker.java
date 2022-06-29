@@ -85,7 +85,6 @@ class ProvAlgorithmChecker
         return Collections.unmodifiableSet(noParams);
     }
 
-    @SuppressWarnings("unused")
     private final boolean isInFipsMode;
     private final JcaJceHelper helper;
     private final BCAlgorithmConstraints algorithmConstraints;
@@ -133,6 +132,13 @@ class ProvAlgorithmChecker
         return null;
     }
 
+    // required for Java 7 and earlier.
+    public void check(Certificate cert)
+        throws CertPathValidatorException
+    {
+        this.check(cert, Collections.<String>emptySet());
+    }
+    
     @Override
     public void check(Certificate cert, Collection<String> unresolvedCritExts) throws CertPathValidatorException
     {
@@ -247,14 +253,15 @@ class ProvAlgorithmChecker
         String sigAlgName = getSigAlgName(cert, null);
         if (!JsseUtils.isNameSpecified(sigAlgName))
         {
-            throw new CertPathValidatorException();
+            throw new CertPathValidatorException("Signature algorithm could not be determined");
         }
 
         AlgorithmParameters sigAlgParams = getSigAlgParams(helper, cert);
 
         if (!algorithmConstraints.permits(JsseUtils.SIGNATURE_CRYPTO_PRIMITIVES_BC, sigAlgName, sigAlgParams))
         {
-            throw new CertPathValidatorException();
+            throw new CertPathValidatorException(
+                "Signature algorithm '" + sigAlgName + "' not permitted with given parameters");
         }
     }
 
@@ -264,7 +271,7 @@ class ProvAlgorithmChecker
         String sigAlgName = getSigAlgName(subjectCert, issuerCert);
         if (!JsseUtils.isNameSpecified(sigAlgName))
         {
-            throw new CertPathValidatorException();
+            throw new CertPathValidatorException("Signature algorithm could not be determined");
         }
 
         AlgorithmParameters sigAlgParams = getSigAlgParams(helper, subjectCert);
@@ -272,7 +279,8 @@ class ProvAlgorithmChecker
         if (!algorithmConstraints.permits(JsseUtils.SIGNATURE_CRYPTO_PRIMITIVES_BC, sigAlgName,
             issuerCert.getPublicKey(), sigAlgParams))
         {
-            throw new CertPathValidatorException();
+            throw new CertPathValidatorException(
+                "Signature algorithm '" + sigAlgName + "' not permitted with given parameters and issuer public key");
         }
     }
 
@@ -458,7 +466,7 @@ class ProvAlgorithmChecker
                 return true;
             }
 
-            ASN1Encodable parameters = algID.getParameters().toASN1Primitive();
+            ASN1Encodable parameters = algID.getParameters();
             if (null != parameters)
             {
                 ASN1Primitive primitive = parameters.toASN1Primitive();

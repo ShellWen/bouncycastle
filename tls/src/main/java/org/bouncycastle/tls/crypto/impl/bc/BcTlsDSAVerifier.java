@@ -3,7 +3,6 @@ package org.bouncycastle.tls.crypto.impl.bc;
 import org.bouncycastle.crypto.DSA;
 import org.bouncycastle.crypto.params.DSAPublicKeyParameters;
 import org.bouncycastle.crypto.signers.DSASigner;
-import org.bouncycastle.crypto.signers.HMacDSAKCalculator;
 import org.bouncycastle.tls.SignatureAlgorithm;
 
 /**
@@ -17,9 +16,9 @@ public class BcTlsDSAVerifier
         super(crypto, publicKey);
     }
 
-    protected DSA createDSAImpl(short hashAlgorithm)
+    protected DSA createDSAImpl()
     {
-        return new DSASigner(new HMacDSAKCalculator(crypto.createDigest(hashAlgorithm)));
+        return new DSASigner();
     }
 
     protected short getSignatureAlgorithm()

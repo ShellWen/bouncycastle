@@ -3,9 +3,10 @@ package org.bouncycastle.tls.crypto;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.security.SecureRandom;
+import java.util.Vector;
 
+import org.bouncycastle.tls.ClientCertificateType;
 import org.bouncycastle.tls.EncryptionAlgorithm;
-import org.bouncycastle.tls.HashAlgorithm;
 import org.bouncycastle.tls.MACAlgorithm;
 import org.bouncycastle.tls.NamedGroup;
 import org.bouncycastle.tls.ProtocolVersion;
@@ -18,11 +19,41 @@ import org.bouncycastle.tls.SignatureAndHashAlgorithm;
 public interface TlsCrypto
 {
     /**
-     * Return true if this TlsCrypto can perform raw signatures and verifications for all supported algorithms.
+     * Return true if this TlsCrypto would use a stream verifier for any of the passed in algorithms. This
+     * method is only relevant to handshakes negotiating (D)TLS 1.2.
      *
-     * @return true if this instance can perform raw signatures and verifications for all supported algorithms, false otherwise.
+     * @param signatureAndHashAlgorithms A {@link Vector} of {@link SignatureAndHashAlgorithm} values.
+     * @return true if this instance would use a stream verifier for any of the passed in algorithms,
+     *         otherwise false.
      */
-    boolean hasAllRawSignatureAlgorithms();
+    boolean hasAnyStreamVerifiers(Vector signatureAndHashAlgorithms);
+
+    /**
+     * Return true if this TlsCrypto would use a stream verifier for any of the passed in algorithms. This
+     * method is only relevant to handshakes negotiating (D)TLS versions older than 1.2.
+     *
+     * @param clientCertificateTypes An array of {@link ClientCertificateType} values.
+     * @return true if this instance would use a stream verifier for any of the passed in algorithms,
+     *         otherwise false.
+     */
+    boolean hasAnyStreamVerifiersLegacy(short[] clientCertificateTypes);
+
+    /**
+     * Return true if this TlsCrypto can support the passed in hash algorithm.
+     *
+     * @param cryptoHashAlgorithm the algorithm of interest.
+     * @return true if cryptoHashAlgorithm is supported, false otherwise.
+     */
+    boolean hasCryptoHashAlgorithm(int cryptoHashAlgorithm);
+
+    /**
+     * Return true if this TlsCrypto can support the passed in signature algorithm
+     * (not necessarily in combination with EVERY hash algorithm).
+     *
+     * @param cryptoSignatureAlgorithm the algorithm of interest.
+     * @return true if cryptoSignatureAlgorithm is supported, false otherwise.
+     */
+    boolean hasCryptoSignatureAlgorithm(int cryptoSignatureAlgorithm);
 
     /**
      * Return true if this TlsCrypto can support DH key agreement.
@@ -47,12 +78,12 @@ public interface TlsCrypto
     boolean hasEncryptionAlgorithm(int encryptionAlgorithm);
 
     /**
-     * Return true if this TlsCrypto can support the passed in hash algorithm.
+     * Return true if this TlsCrypto can support HKDF with the passed in hash algorithm.
      *
-     * @param hashAlgorithm the algorithm of interest.
-     * @return true if hashAlgorithm is supported, false otherwise.
+     * @param cryptoHashAlgorithm the algorithm of interest.
+     * @return true if HKDF is supported with cryptoHashAlgorithm, false otherwise.
      */
-    boolean hasHashAlgorithm(short hashAlgorithm);
+    boolean hasHKDFAlgorithm(int cryptoHashAlgorithm);
 
     /**
      * Return true if this TlsCrypto can support the passed in MAC algorithm.
@@ -109,10 +140,10 @@ public interface TlsCrypto
     boolean hasSRPAuthentication();
 
     /**
-     * Create a TlsSecret object based provided data.
+     * Create a TlsSecret object based on provided data.
      *
      * @param data the data to base the TlsSecret on.
-     * @return a TlsSecret based on random data.
+     * @return a TlsSecret based on the provided data.
      */
     TlsSecret createSecret(byte[] data);
 
@@ -132,7 +163,7 @@ public interface TlsCrypto
     SecureRandom getSecureRandom();
 
     /**
-     * Create a TlsCertificate from a ASN.1 binary encoding of an X.509 certificate.
+     * Create a TlsCertificate from an ASN.1 binary encoding of an X.509 certificate.
      *
      * @param encoding DER/BER encoding of the certificate of interest.
      * @return a TlsCertificate.
@@ -149,22 +180,22 @@ public interface TlsCrypto
      * @param cryptoParams context specific parameters.
      * @param encryptionAlgorithm the encryption algorithm to be employed by the cipher.
      * @param macAlgorithm the MAC algorithm to be employed by the cipher.
-     * @return a {@link TlsCipher} implementing the encryption and MAC algorithm.
+     * @return a {@link TlsCipher} implementing the encryption and MAC algorithms.
      * @throws IOException
      */
     TlsCipher createCipher(TlsCryptoParameters cryptoParams, int encryptionAlgorithm, int macAlgorithm)
         throws IOException;
 
     /**
-     * Create an domain object supporting the domain parameters described in dhConfig.
+     * Create a domain object supporting the domain parameters described in dhConfig.
      *
      * @param dhConfig the config describing the DH parameters to use.
-     * @return a TlsECDomain supporting the parameters in ecConfig.
+     * @return a TlsDHDomain supporting the parameters in dhConfig.
      */
     TlsDHDomain createDHDomain(TlsDHConfig dhConfig);
 
     /**
-     * Create an domain object supporting the domain parameters described in ecConfig.
+     * Create a domain object supporting the domain parameters described in ecConfig.
      *
      * @param ecConfig the config describing the EC parameters to use.
      * @return a TlsECDomain supporting the parameters in ecConfig.
@@ -172,33 +203,23 @@ public interface TlsCrypto
     TlsECDomain createECDomain(TlsECConfig ecConfig);
 
     /**
-     * Adopt the passed in secret, creating a new copy of it..
+     * Adopt the passed in secret, creating a new copy of it.
      *
      * @param secret the secret to make a copy of.
-     * @return a TlsSecret based the original secret.
+     * @return a TlsSecret based on the original secret.
      */
     TlsSecret adoptSecret(TlsSecret secret);
 
     /**
      * Create a suitable hash for the hash algorithm identifier passed in.
      * <p>
-     * See enumeration class {@link HashAlgorithm} for appropriate argument values.
+     * See enumeration class {@link CryptoHashAlgorithm} for appropriate argument values.
      * </p>
      *
-     * @param hashAlgorithm the hash algorithm the hash needs to implement.
+     * @param cryptoHashAlgorithm the hash algorithm the hash needs to implement.
      * @return a {@link TlsHash}.
      */
-    TlsHash createHash(short hashAlgorithm);
-
-    /**
-     * Create a suitable HMAC using the hash algorithm identifier passed in.
-     * <p>
-     * See enumeration class {@link HashAlgorithm} for appropriate argument values.
-     * </p>
-     * @param hashAlgorithm the hash algorithm the HMAC should use.
-     * @return a {@link TlsHMAC}.
-     */
-    TlsHMAC createHMAC(short hashAlgorithm);
+    TlsHash createHash(int cryptoHashAlgorithm);
 
     /**
      * Create a suitable HMAC for the MAC algorithm identifier passed in.
@@ -209,6 +230,16 @@ public interface TlsCrypto
      * @return a {@link TlsHMAC}.
      */
     TlsHMAC createHMAC(int macAlgorithm);
+
+    /**
+     * Create a suitable HMAC using the hash algorithm identifier passed in.
+     * <p>
+     * See enumeration class {@link CryptoHashAlgorithm} for appropriate argument values.
+     * </p>
+     * @param cryptoHashAlgorithm the hash algorithm the HMAC should use.
+     * @return a {@link TlsHMAC}.
+     */
+    TlsHMAC createHMACForHash(int cryptoHashAlgorithm);
 
     /**
      * Create a nonce generator. Each call should construct a new generator, and the generator
@@ -225,7 +256,7 @@ public interface TlsCrypto
      * Create an SRP-6 client.
      *
      * @param srpConfig client config.
-     * @return an initialised SRP6 client object,
+     * @return an initialised SRP6 client object.
      */
     TlsSRP6Client createSRP6Client(TlsSRPConfig srpConfig);
 
@@ -242,14 +273,14 @@ public interface TlsCrypto
      * Create an SRP-6 verifier generator.
      *
      * @param srpConfig generator config.
-     * @return an initialized SRP6 verifier generator,
+     * @return an initialized SRP6 verifier generator.
      */
     TlsSRP6VerifierGenerator createSRP6VerifierGenerator(TlsSRPConfig srpConfig);
 
     /**
      * Setup an initial "secret" for a chain of HKDF calls (RFC 5869), containing a string of HashLen zeroes.
      * 
-     * @param hashAlgorithm the hash algorithm to instantiate HMAC with. See {@link HashAlgorithm} for values.
+     * @param cryptoHashAlgorithm the hash algorithm to instantiate HMAC with. See {@link CryptoHashAlgorithm} for values.
      */
-    TlsSecret hkdfInit(short hashAlgorithm);
+    TlsSecret hkdfInit(int cryptoHashAlgorithm);
 }

@@ -6,10 +6,6 @@ import java.security.Security;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-/**
- * Settings can either be in java.security or set as system properties.
- * Settings provided in java.security will override system properties.
- */
 class PropertyUtils
 {
     private static final Logger LOG = Logger.getLogger(PropertyUtils.class.getName());
@@ -112,6 +108,28 @@ class PropertyUtils
         }
         LOG.log(Level.FINE, "Integer system property [" + propertyName + "] defaulted to: " + defaultValue);
         return defaultValue;
+    }
+
+    static String getSensitiveStringSystemProperty(String propertyName)
+    {
+        String propertyValue = getSystemProperty(propertyName);
+        if (null != propertyValue)
+        {
+            LOG.info("Found sensitive string system property [" + propertyName + "]");
+            return propertyValue;
+        }
+        return null;
+    }
+
+    static String getStringSecurityProperty(String propertyName)
+    {
+        String propertyValue = getSecurityProperty(propertyName);
+        if (null != propertyValue)
+        {
+            LOG.log(Level.INFO, "Found string security property [" + propertyName + "]: " + propertyValue);
+            return propertyValue;
+        }
+        return null;
     }
 
     static String getStringSecurityProperty(String propertyName, String defaultValue)

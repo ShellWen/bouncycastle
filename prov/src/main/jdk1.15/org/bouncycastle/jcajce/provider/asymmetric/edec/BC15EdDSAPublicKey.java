@@ -34,17 +34,14 @@ class BC15EdDSAPublicKey
     @Override
     public EdECPoint getPoint()
     {
-        byte[] keyData;
-        if (eddsaPublicKey instanceof Ed448PublicKeyParameters)
-        {
-            keyData = ((Ed448PublicKeyParameters)eddsaPublicKey).getEncoded();
-        }
-        else
-        {
-            keyData = ((Ed448PublicKeyParameters)eddsaPublicKey).getEncoded();
-        }
-        return new EdECPoint(keyData[keyData.length - 1] != 0x00,
-            new BigInteger(1, Arrays.reverse(Arrays.copyOfRange(keyData, 0, keyData.length - 1))));
+        byte[] keyData = getPointEncoding();
+
+        Arrays.reverseInPlace(keyData);
+
+        boolean xOdd = (keyData[0] & 0x80) != 0;
+        keyData[0] &= 0x7f;
+
+        return new EdECPoint(xOdd, new BigInteger(1, keyData));
     }
 
     @Override

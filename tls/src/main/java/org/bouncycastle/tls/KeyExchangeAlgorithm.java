@@ -53,4 +53,22 @@ public class KeyExchangeAlgorithm
      * RFC 5489
      */
     public static final int ECDHE_PSK = 24;
+
+    /*
+     * GMT 0024-2014
+     */
+    public static final int SM2 = 25;
+
+    public static boolean isAnonymous(int keyExchangeAlgorithm)
+    {
+        switch (keyExchangeAlgorithm)
+        {
+        case DH_anon:
+        case DH_anon_EXPORT:
+        case ECDH_anon:
+            return true;
+        default:
+            return false;
+        }
+    }
 }

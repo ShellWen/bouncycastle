@@ -16,6 +16,7 @@ import org.bouncycastle.bcpg.sig.IssuerKeyID;
 import org.bouncycastle.bcpg.sig.KeyExpirationTime;
 import org.bouncycastle.bcpg.sig.KeyFlags;
 import org.bouncycastle.bcpg.sig.NotationData;
+import org.bouncycastle.bcpg.sig.PolicyURI;
 import org.bouncycastle.bcpg.sig.PreferredAlgorithms;
 import org.bouncycastle.bcpg.sig.PrimaryUserID;
 import org.bouncycastle.bcpg.sig.Revocable;
@@ -49,16 +50,19 @@ public class PGPSignatureSubpacketGenerator
      */
     public PGPSignatureSubpacketGenerator(PGPSignatureSubpacketVector sigSubV)
     {
-        for (int i = 0; i != sigSubV.packets.length; i++)
+        if (sigSubV != null)
         {
-            packets.add(sigSubV.packets[i]);
+            for (int i = 0; i != sigSubV.packets.length; i++)
+            {
+                packets.add(sigSubV.packets[i]);
+            }
         }
     }
 
     /**
      * Specify, whether or not the signature is revocable.
      *
-     * @param isCritical true if should be treated as critical, false otherwise.
+     * @param isCritical  true if should be treated as critical, false otherwise.
      * @param isRevocable true if the signature should be revocable, false otherwise.
      */
     public void setRevocable(boolean isCritical, boolean isRevocable)
@@ -70,7 +74,7 @@ public class PGPSignatureSubpacketGenerator
      * Specify, whether or not the signature should be marked as exportable.
      * If this subpacket is missing, the signature is treated as being exportable.
      *
-     * @param isCritical true if should be treated as critical, false otherwise.
+     * @param isCritical   true if should be treated as critical, false otherwise.
      * @param isExportable true if the signature should be exportable, false otherwise.
      */
     public void setExportable(boolean isCritical, boolean isExportable)
@@ -82,7 +86,7 @@ public class PGPSignatureSubpacketGenerator
      * Specify the set of features of the key.
      *
      * @param isCritical true if should be treated as critical, false otherwise.
-     * @param feature features
+     * @param feature    features
      */
     public void setFeature(boolean isCritical, byte feature)
     {
@@ -178,11 +182,28 @@ public class PGPSignatureSubpacketGenerator
     }
 
     /**
+     * Specify the preferred AEAD algorithms of this key.
+     *
+     * @param isCritical true if should be treated as critical, false otherwise.
+     * @param algorithms array of algorithms in descending preference
+     */
+    public void setPreferredAEADAlgorithms(boolean isCritical, int[] algorithms)
+    {
+        packets.add(new PreferredAlgorithms(SignatureSubpacketTags.PREFERRED_AEAD_ALGORITHMS, isCritical,
+            algorithms));
+    }
+
+    public void addPolicyURI(boolean isCritical, String policyUri)
+    {
+        packets.add(new PolicyURI(isCritical, policyUri));
+    }
+
+    /**
      * Set this keys key flags.
      * See {@link PGPKeyFlags}.
      *
      * @param isCritical true if should be treated as critical, false otherwise.
-     * @param flags flags
+     * @param flags      flags
      */
     public void setKeyFlags(boolean isCritical, int flags)
     {
@@ -193,8 +214,7 @@ public class PGPSignatureSubpacketGenerator
      * Add a signer user-id to the signature.
      *
      * @param isCritical true if should be treated as critical, false otherwise.
-     * @param userID signer user-id
-     *
+     * @param userID     signer user-id
      * @deprecated use {@link #addSignerUserID(boolean, String)} instead.
      */
     public void setSignerUserID(boolean isCritical, String userID)
@@ -206,7 +226,7 @@ public class PGPSignatureSubpacketGenerator
      * Add a signer user-id to the signature.
      *
      * @param isCritical true if should be treated as critical, false otherwise.
-     * @param userID signer user-id
+     * @param userID     signer user-id
      */
     public void addSignerUserID(boolean isCritical, String userID)
     {
@@ -231,10 +251,9 @@ public class PGPSignatureSubpacketGenerator
     /**
      * Add an embedded signature packet.
      *
-     * @param isCritical true if should be treated as critical, false otherwise.
+     * @param isCritical   true if should be treated as critical, false otherwise.
      * @param pgpSignature embedded signature
      * @throws IOException in case of an error
-     *
      * @deprecated use {@link #addEmbeddedSignature(boolean, PGPSignature)} instead.
      */
     public void setEmbeddedSignature(boolean isCritical, PGPSignature pgpSignature)
@@ -246,7 +265,7 @@ public class PGPSignatureSubpacketGenerator
     /**
      * Add an embedded signature packet.
      *
-     * @param isCritical true if should be treated as critical, false otherwise.
+     * @param isCritical   true if should be treated as critical, false otherwise.
      * @param pgpSignature embedded signature
      * @throws IOException in case of an error
      */
@@ -278,11 +297,10 @@ public class PGPSignatureSubpacketGenerator
     /**
      * Add a notation data packet to the signature.
      *
-     * @param isCritical true if should be treated as critical, false otherwise.
+     * @param isCritical      true if should be treated as critical, false otherwise.
      * @param isHumanReadable true if the notation is human-readable.
-     * @param notationName name of the notation key
-     * @param notationValue value of the notation
-     *
+     * @param notationName    name of the notation key
+     * @param notationValue   value of the notation
      * @deprecated use {@link #addNotationData(boolean, boolean, String, String)} instead.
      */
     public void setNotationData(boolean isCritical, boolean isHumanReadable, String notationName,
@@ -294,10 +312,10 @@ public class PGPSignatureSubpacketGenerator
     /**
      * Add a notation data packet to the signature.
      *
-     * @param isCritical true if should be treated as critical, false otherwise.
+     * @param isCritical      true if should be treated as critical, false otherwise.
      * @param isHumanReadable true if the notation is human-readable.
-     * @param notationName name of the notation key.
-     * @param notationValue value of the notation.
+     * @param notationName    name of the notation key.
+     * @param notationValue   value of the notation.
      */
     public void addNotationData(boolean isCritical, boolean isHumanReadable, String notationName,
                                 String notationValue)
@@ -309,8 +327,8 @@ public class PGPSignatureSubpacketGenerator
      * Sets revocation reason sub packet.
      * See {@link org.bouncycastle.bcpg.sig.RevocationReasonTags}.
      *
-     * @param isCritical true if should be treated as critical, false otherwise.
-     * @param reason reason code for the revocation
+     * @param isCritical  true if should be treated as critical, false otherwise.
+     * @param reason      reason code for the revocation
      * @param description human readable description of the revocation reason
      */
     public void setRevocationReason(boolean isCritical, byte reason, String description)
@@ -321,10 +339,9 @@ public class PGPSignatureSubpacketGenerator
     /**
      * Adds a revocation key sub packet.
      *
-     * @param isCritical true if should be treated as critical, false otherwise.
+     * @param isCritical   true if should be treated as critical, false otherwise.
      * @param keyAlgorithm algorithm of the revocation key
-     * @param fingerprint fingerprint of the revocation key
-     *
+     * @param fingerprint  fingerprint of the revocation key
      * @deprecated use {@link #addRevocationKey(boolean, int, byte[])} instead.
      */
     public void setRevocationKey(boolean isCritical, int keyAlgorithm, byte[] fingerprint)
@@ -335,9 +352,9 @@ public class PGPSignatureSubpacketGenerator
     /**
      * Adds a revocation key sub packet.
      *
-     * @param isCritical true if should be treated as critical, false otherwise.
+     * @param isCritical   true if should be treated as critical, false otherwise.
      * @param keyAlgorithm algorithm of the revocation key
-     * @param fingerprint fingerprint of the revocation key
+     * @param fingerprint  fingerprint of the revocation key
      */
     public void addRevocationKey(boolean isCritical, int keyAlgorithm, byte[] fingerprint)
     {
@@ -349,7 +366,7 @@ public class PGPSignatureSubpacketGenerator
      * Sets issuer key-id subpacket.
      *
      * @param isCritical true if should be treated as critical, false otherwise.
-     * @param keyID id of the key that issued the signature
+     * @param keyID      id of the key that issued the signature
      */
     public void setIssuerKeyID(boolean isCritical, long keyID)
     {
@@ -359,10 +376,10 @@ public class PGPSignatureSubpacketGenerator
     /**
      * Sets the signature target sub packet.
      *
-     * @param isCritical true if should be treated as critical, false otherwise.
+     * @param isCritical         true if should be treated as critical, false otherwise.
      * @param publicKeyAlgorithm algorithm of the key that issued the signature that is being referred to.
-     * @param hashAlgorithm hash algorithm that was used to calculate the hash data.
-     * @param hashData hash of the signature that is being referred to.
+     * @param hashAlgorithm      hash algorithm that was used to calculate the hash data.
+     * @param hashData           hash of the signature that is being referred to.
      */
     public void setSignatureTarget(boolean isCritical, int publicKeyAlgorithm, int hashAlgorithm, byte[] hashData)
     {
@@ -373,7 +390,7 @@ public class PGPSignatureSubpacketGenerator
      * Sets the signature issuer fingerprint for the signing key.
      *
      * @param isCritical true if critical, false otherwise.
-     * @param secretKey the secret key used to generate the associated signature.
+     * @param secretKey  the secret key used to generate the associated signature.
      */
     public void setIssuerFingerprint(boolean isCritical, PGPSecretKey secretKey)
     {
@@ -384,7 +401,7 @@ public class PGPSignatureSubpacketGenerator
      * Sets the signature issuer fingerprint for the signing key.
      *
      * @param isCritical true if critical, false otherwise.
-     * @param publicKey the public key needed to verify the associated signature.
+     * @param publicKey  the public key needed to verify the associated signature.
      */
     public void setIssuerFingerprint(boolean isCritical, PGPPublicKey publicKey)
     {
@@ -395,8 +412,7 @@ public class PGPSignatureSubpacketGenerator
      * Adds a intended recipient fingerprint for an encrypted payload the signature is associated with.
      *
      * @param isCritical true if critical, false otherwise.
-     * @param publicKey the public key the encrypted payload was encrypted against.
-     *
+     * @param publicKey  the public key the encrypted payload was encrypted against.
      * @deprecated use {@link #addIntendedRecipientFingerprint(boolean, PGPPublicKey)} instead.
      */
     public void setIntendedRecipientFingerprint(boolean isCritical, PGPPublicKey publicKey)
@@ -408,12 +424,12 @@ public class PGPSignatureSubpacketGenerator
      * Adds a intended recipient fingerprint for an encrypted payload the signature is associated with.
      *
      * @param isCritical true if critical, false otherwise.
-     * @param publicKey the public key the encrypted payload was encrypted against.
+     * @param publicKey  the public key the encrypted payload was encrypted against.
      */
     public void addIntendedRecipientFingerprint(boolean isCritical, PGPPublicKey publicKey)
     {
         packets.add(new IntendedRecipientFingerprint(isCritical,
-                publicKey.getVersion(), publicKey.getFingerprint()));
+            publicKey.getVersion(), publicKey.getFingerprint()));
     }
 
     /**
@@ -466,7 +482,7 @@ public class PGPSignatureSubpacketGenerator
      * @return an array of zero or more matching subpackets.
      */
     public SignatureSubpacket[] getSubpackets(
-        int    type)
+        int type)
     {
         List list = new ArrayList();
 

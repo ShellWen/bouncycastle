@@ -5,8 +5,6 @@ import java.security.Key;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.cert.X509Certificate;
-import java.security.interfaces.DSAPrivateKey;
-import java.security.interfaces.ECPrivateKey;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -21,12 +19,17 @@ import java.util.Vector;
 
 import javax.security.auth.x500.X500Principal;
 
+import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Encoding;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ocsp.OCSPResponse;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
+import org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import org.bouncycastle.jsse.BCSNIHostName;
 import org.bouncycastle.jsse.BCSNIMatcher;
 import org.bouncycastle.jsse.BCSNIServerName;
@@ -43,11 +46,11 @@ import org.bouncycastle.tls.CertificateStatusType;
 import org.bouncycastle.tls.ClientCertificateType;
 import org.bouncycastle.tls.IdentifierType;
 import org.bouncycastle.tls.KeyExchangeAlgorithm;
+import org.bouncycastle.tls.NamedGroup;
 import org.bouncycastle.tls.ProtocolName;
 import org.bouncycastle.tls.ProtocolVersion;
 import org.bouncycastle.tls.SecurityParameters;
 import org.bouncycastle.tls.ServerName;
-import org.bouncycastle.tls.SignatureAlgorithm;
 import org.bouncycastle.tls.SignatureAndHashAlgorithm;
 import org.bouncycastle.tls.TlsContext;
 import org.bouncycastle.tls.TlsCredentialedDecryptor;
@@ -63,12 +66,16 @@ import org.bouncycastle.tls.crypto.impl.jcajce.JceDefaultTlsCredentialedDecrypto
 
 abstract class JsseUtils
 {
-    private static final boolean provRequireCloseNotify =
-        PropertyUtils.getBooleanSystemProperty("com.sun.net.ssl.requireCloseNotify", true);
     private static final boolean provTlsAllowLegacyMasterSecret =
         PropertyUtils.getBooleanSystemProperty("jdk.tls.allowLegacyMasterSecret", true);
     private static final boolean provTlsAllowLegacyResumption =
         PropertyUtils.getBooleanSystemProperty("jdk.tls.allowLegacyResumption", false);
+    private static final int provTlsMaxCertificateChainLength =
+        PropertyUtils.getIntegerSystemProperty("jdk.tls.maxCertificateChainLength", 10, 1, Integer.MAX_VALUE);
+    private static final int provTlsMaxHandshakeMessageSize =
+        PropertyUtils.getIntegerSystemProperty("jdk.tls.maxHandshakeMessageSize", 32768, 1024, Integer.MAX_VALUE);
+    private static final boolean provTlsRequireCloseNotify =
+        PropertyUtils.getBooleanSystemProperty("com.sun.net.ssl.requireCloseNotify", true);
     private static final boolean provTlsUseExtendedMasterSecret =
         PropertyUtils.getBooleanSystemProperty("jdk.tls.useExtendedMasterSecret", true);
 
@@ -79,7 +86,8 @@ abstract class JsseUtils
     static final Set<BCCryptoPrimitive> SIGNATURE_CRYPTO_PRIMITIVES_BC =
         Collections.unmodifiableSet(EnumSet.of(BCCryptoPrimitive.SIGNATURE));
 
-    protected static X509Certificate[] EMPTY_CHAIN = new X509Certificate[0];
+    static String EMPTY_STRING = "";
+    static X509Certificate[] EMPTY_X509CERTIFICATES = new X509Certificate[0];
 
     static class BCUnknownServerName extends BCSNIServerName
     {
@@ -97,6 +105,28 @@ abstract class JsseUtils
     static boolean allowLegacyResumption()
     {
         return provTlsAllowLegacyResumption;
+    }
+
+    static String getSignatureAlgorithmsReport(String title, List<SignatureSchemeInfo> signatureSchemes)
+    {
+        String[] names = SignatureSchemeInfo.getJcaSignatureAlgorithmsBC(signatureSchemes);
+
+        StringBuilder sb = new StringBuilder(title);
+        sb.append(':');
+        for (String name : names)
+        {
+            sb.append(' ');
+            sb.append(name);
+        }
+        return sb.toString();
+    }
+
+    static void checkSessionCreationEnabled(ProvTlsManager manager)
+    {
+        if (!manager.getEnableSessionCreation())
+        {
+            throw new IllegalStateException("Cannot resume session and session creation is disabled");
+        }
     }
 
     static <T> T[] clone(T[] ts)
@@ -179,6 +209,42 @@ abstract class JsseUtils
         return a == b || (null != a && null != b && a.equals(b));
     }
 
+    static int getMaxCertificateChainLength()
+    {
+        return provTlsMaxCertificateChainLength;
+    }
+
+    static int getMaxHandshakeMessageSize()
+    {
+        return provTlsMaxHandshakeMessageSize;
+    }
+
+    static ASN1ObjectIdentifier getNamedCurveOID(PublicKey publicKey)
+    {
+        try
+        {
+            SubjectPublicKeyInfo spki = SubjectPublicKeyInfo.getInstance(publicKey.getEncoded());
+            AlgorithmIdentifier algID = spki.getAlgorithm();
+            if (X9ObjectIdentifiers.id_ecPublicKey.equals(algID.getAlgorithm()))
+            {
+                ASN1Encodable parameters = algID.getParameters();
+                if (null != parameters)
+                {
+                    ASN1Primitive primitive = parameters.toASN1Primitive();
+                    if (primitive instanceof ASN1ObjectIdentifier)
+                    {
+                        return (ASN1ObjectIdentifier)primitive; 
+                    }
+                }
+            }
+        }
+        catch (Exception e)
+        {
+        }
+
+        return null;
+    }
+
     static String[] resize(String[] data, int count)
     {
         if (count < data.length)
@@ -202,39 +268,6 @@ abstract class JsseUtils
         }
 
         return applicationProtocol.getUtf8Decoding();
-    }
-
-    static String getAuthTypeClient(short signatureAlgorithm)
-    {
-        /*
-         * For use with checkClientTrusted calls on a trust manager.
-         * "Determined by the actual certificate used" according to JSSE Standard Names, but in
-         * practice trust managers only require the authType to be a non-null, non-empty String.
-         */
-
-        switch (signatureAlgorithm)
-        {
-        case SignatureAlgorithm.rsa:
-            return "RSA";
-        case SignatureAlgorithm.dsa:
-            return "DSA";
-        case SignatureAlgorithm.ecdsa:
-            return "EC";
-        case SignatureAlgorithm.ed25519:
-            return "Ed25519";
-        case SignatureAlgorithm.ed448:
-            return "Ed448";
-        case SignatureAlgorithm.rsa_pss_rsae_sha256:
-        case SignatureAlgorithm.rsa_pss_rsae_sha384:
-        case SignatureAlgorithm.rsa_pss_rsae_sha512:
-            return "RSA";
-        case SignatureAlgorithm.rsa_pss_pss_sha256:
-        case SignatureAlgorithm.rsa_pss_pss_sha384:
-        case SignatureAlgorithm.rsa_pss_pss_sha512:
-            return "RSASSA-PSS";
-        default:
-            throw new IllegalArgumentException();
-        }
     }
 
     static String getAuthTypeServer(int keyExchangeAlgorithm)
@@ -314,7 +347,7 @@ abstract class JsseUtils
 
     static Certificate getCertificateMessage(JcaTlsCrypto crypto, X509Certificate[] chain)
     {
-        if (chain == null || chain.length < 1)
+        if (TlsUtils.isNullOrEmpty(chain))
         {
             throw new IllegalArgumentException();
         }
@@ -330,7 +363,7 @@ abstract class JsseUtils
     static Certificate getCertificateMessage13(JcaTlsCrypto crypto, X509Certificate[] chain,
         byte[] certificateRequestContext)
     {
-        if (chain == null || chain.length < 1)
+        if (TlsUtils.isNullOrEmpty(chain))
         {
             throw new IllegalArgumentException();
         }
@@ -369,9 +402,14 @@ abstract class JsseUtils
         return jcaSignatureAlgorithm + ":" + keyAlgorithm;
     }
 
-    static String getKeyType(SignatureSchemeInfo signatureSchemeInfo)
+    static String getKeyType13(String keyAlgorithm, int namedGroup13)
     {
-        return signatureSchemeInfo.getKeyAlgorithm();
+        if (namedGroup13 < 0)
+        {
+            return keyAlgorithm;
+        }
+
+        return keyAlgorithm + "/" + NamedGroup.getStandardName(namedGroup13);
     }
 
     static String getKeyTypeLegacyClient(short clientCertificateType)
@@ -415,7 +453,7 @@ abstract class JsseUtils
 
     static Vector<ProtocolName> getProtocolNames(String[] applicationProtocols)
     {
-        if (null == applicationProtocols || applicationProtocols.length < 1)
+        if (TlsUtils.isNullOrEmpty(applicationProtocols))
         {
             return null;
         }
@@ -511,7 +549,7 @@ abstract class JsseUtils
     {
         if (certificateMessage == null || certificateMessage.isEmpty())
         {
-            return EMPTY_CHAIN;
+            return EMPTY_X509CERTIFICATES;
         }
 
         try
@@ -631,7 +669,12 @@ abstract class JsseUtils
 
     static boolean isNameSpecified(String name)
     {
-        return null != name && name.length() > 0;
+        return !isNullOrEmpty(name);
+    }
+
+    static boolean isNullOrEmpty(String s)
+    {
+        return null == s || s.length() < 1;
     }
 
     static boolean isTLSv12(String protocol)
@@ -641,60 +684,11 @@ abstract class JsseUtils
         return null != protocolVersion && TlsUtils.isTLSv12(protocolVersion); 
     }
 
-    static boolean isUsableKeyForServer(short signatureAlgorithm, PrivateKey privateKey)
+    static boolean isTLSv13(String protocol)
     {
-        final String algorithm = getPrivateKeyAlgorithm(privateKey);
+        ProtocolVersion protocolVersion = ProvSSLContextSpi.getProtocolVersion(protocol);
 
-        switch (signatureAlgorithm)
-        {
-        case SignatureAlgorithm.dsa:
-            return privateKey instanceof DSAPrivateKey || "DSA".equalsIgnoreCase(algorithm);
-
-        case SignatureAlgorithm.ecdsa:
-            return privateKey instanceof ECPrivateKey || "EC".equalsIgnoreCase(algorithm);
-
-        case SignatureAlgorithm.ed25519:
-            return "Ed25519".equalsIgnoreCase(algorithm);
-
-        case SignatureAlgorithm.ed448:
-            return "Ed448".equalsIgnoreCase(algorithm);
-
-        case SignatureAlgorithm.rsa:
-            return "RSA".equalsIgnoreCase(algorithm);
-
-        case SignatureAlgorithm.rsa_pss_rsae_sha256:
-        case SignatureAlgorithm.rsa_pss_rsae_sha384:
-        case SignatureAlgorithm.rsa_pss_rsae_sha512:
-            return "RSA".equalsIgnoreCase(algorithm);
-
-        case SignatureAlgorithm.rsa_pss_pss_sha256:
-        case SignatureAlgorithm.rsa_pss_pss_sha384:
-        case SignatureAlgorithm.rsa_pss_pss_sha512:
-            return "RSASSA-PSS".equalsIgnoreCase(algorithm);
-
-        default:
-            return false;
-        }
-    }
-
-    static boolean isUsableKeyForServerLegacy(int keyExchangeAlgorithm, PrivateKey privateKey)
-    {
-        switch (keyExchangeAlgorithm)
-        {
-        case KeyExchangeAlgorithm.DHE_DSS:
-        case KeyExchangeAlgorithm.DHE_RSA:
-        case KeyExchangeAlgorithm.ECDHE_ECDSA:
-        case KeyExchangeAlgorithm.ECDHE_RSA:
-            return isUsableKeyForServer(TlsUtils.getLegacySignatureAlgorithmServer(keyExchangeAlgorithm), privateKey);
-
-        case KeyExchangeAlgorithm.RSA:
-            return "RSA".equalsIgnoreCase(getPrivateKeyAlgorithm(privateKey));
-
-        // NOTE: This method should never be called for TLS 1.3 
-        case KeyExchangeAlgorithm.NULL:
-        default:
-            return false;
-        }
+        return null != protocolVersion && TlsUtils.isTLSv13(protocolVersion); 
     }
 
     static X500Principal toX500Principal(X500Name name) throws IOException
@@ -813,9 +807,40 @@ abstract class JsseUtils
         return null;
     }
 
+    static String removeAllWhitespace(String s)
+    {
+        if (isNullOrEmpty(s))
+        {
+            return s;
+        }
+
+        int originalLength = s.length();
+        char[] buf = new char[originalLength];
+        int bufPos = 0;
+
+        for (int i = 0; i < originalLength; ++i)
+        {
+            char c = s.charAt(i);
+            if (!Character.isWhitespace(c))
+            {
+                buf[bufPos++] = c;
+            }
+        }
+
+        if (bufPos == 0)
+        {
+            return EMPTY_STRING;
+        }
+        if (bufPos == originalLength)
+        {
+            return s;
+        }
+        return new String(buf, 0, bufPos);
+    }
+
     static boolean requireCloseNotify()
     {
-        return provRequireCloseNotify;
+        return provTlsRequireCloseNotify;
     }
 
     static String stripDoubleQuotes(String s)

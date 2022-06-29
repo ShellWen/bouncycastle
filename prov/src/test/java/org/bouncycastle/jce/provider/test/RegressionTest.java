@@ -90,11 +90,14 @@ public class RegressionTest
         new SM2CipherTest(),
         new ZucTest(),
         new ChaCha20Poly1305Test(),
-        new SipHash128Test()
+        new SipHash128Test(),
+        new XOFTest()
     };
 
     public static void main(String[] args)
     {
+        System.setProperty("org.bouncycastle.bks.enable_v1", "true");
+
         Security.addProvider(new BouncyCastleProvider());
 
         System.out.println("Testing " + Security.getProvider("BC").getInfo() + " version: " + Security.getProvider("BC").getVersion());

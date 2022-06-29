@@ -20,6 +20,7 @@ import javax.net.ssl.ManagerFactoryParameters;
 
 import org.bouncycastle.jcajce.util.JcaJceHelper;
 import org.bouncycastle.jsse.BCX509ExtendedKeyManager;
+import org.bouncycastle.tls.TlsUtils;
 
 class ProvKeyManagerFactorySpi
     extends KeyManagerFactorySpi
@@ -33,7 +34,7 @@ class ProvKeyManagerFactorySpi
         String ksPath = null;
         char[] ksPassword = null;
 
-        String ksPathProp = PropertyUtils.getSystemProperty("javax.net.ssl.keyStore");
+        String ksPathProp = PropertyUtils.getStringSystemProperty("javax.net.ssl.keyStore");
         if ("NONE".equals(ksPathProp))
         {
             // Do not try to load any file
@@ -48,7 +49,7 @@ class ProvKeyManagerFactorySpi
 
         KeyStore ks = createKeyStore(defaultType);
 
-        String ksPasswordProp = PropertyUtils.getSystemProperty("javax.net.ssl.keyStorePassword");
+        String ksPasswordProp = PropertyUtils.getSensitiveStringSystemProperty("javax.net.ssl.keyStorePassword");
         if (null != ksPasswordProp)
         {
             ksPassword = ksPasswordProp.toCharArray();
@@ -59,15 +60,24 @@ class ProvKeyManagerFactorySpi
         {
             if (null == ksPath)
             {
-                LOG.info("Initializing empty key store");
+                LOG.config("Initializing default key store as empty");
             }
             else
             {
-                LOG.info("Initializing with key store at path: " + ksPath);
+                LOG.config("Initializing default key store from path: " + ksPath);
                 ksInput = new BufferedInputStream(new FileInputStream(ksPath));
             }
 
-            ks.load(ksInput, ksPassword);
+            try
+            {
+                ks.load(ksInput, ksPassword);
+            }
+            catch (NullPointerException e)
+            {
+                // work around for NPE in FIPS KeyStore
+                ks = KeyStore.getInstance("BCFKS");
+                ks.load(null, null);
+            }
         }
         finally
         {
@@ -129,15 +139,15 @@ class ProvKeyManagerFactorySpi
         throws NoSuchProviderException, KeyStoreException
     {
         String ksType = getKeyStoreType(defaultType);
-        String ksProv = PropertyUtils.getSystemProperty("javax.net.ssl.keyStoreProvider");
-        return (null == ksProv || ksProv.length() < 1)
+        String ksProv = PropertyUtils.getStringSystemProperty("javax.net.ssl.keyStoreProvider");
+        return TlsUtils.isNullOrEmpty(ksProv)
             ?   KeyStore.getInstance(ksType)
             :   KeyStore.getInstance(ksType, ksProv);
     }
 
     private static String getKeyStoreType(String defaultType)
     {
-        String ksType = PropertyUtils.getSystemProperty("javax.net.ssl.keyStoreType");
+        String ksType = PropertyUtils.getStringSystemProperty("javax.net.ssl.keyStoreType");
         return (null == ksType) ? defaultType : ksType;
     }
 }

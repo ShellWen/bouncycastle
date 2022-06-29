@@ -4,9 +4,8 @@ import java.io.IOException;
 import java.security.PrivateKey;
 import java.security.spec.AlgorithmParameterSpec;
 
-import org.bouncycastle.tls.HashAlgorithm;
-import org.bouncycastle.tls.SignatureAlgorithm;
 import org.bouncycastle.tls.SignatureAndHashAlgorithm;
+import org.bouncycastle.tls.SignatureScheme;
 import org.bouncycastle.tls.crypto.TlsSigner;
 import org.bouncycastle.tls.crypto.TlsStreamSigner;
 
@@ -18,9 +17,9 @@ public class JcaTlsRSAPSSSigner
 {
     private final JcaTlsCrypto crypto;
     private final PrivateKey privateKey;
-    private final short signatureAlgorithm;
+    private final int signatureScheme;
 
-    public JcaTlsRSAPSSSigner(JcaTlsCrypto crypto, PrivateKey privateKey, short signatureAlgorithm)
+    public JcaTlsRSAPSSSigner(JcaTlsCrypto crypto, PrivateKey privateKey, int signatureScheme)
     {
         if (null == crypto)
         {
@@ -30,36 +29,61 @@ public class JcaTlsRSAPSSSigner
         {
             throw new NullPointerException("privateKey");
         }
-        if (!SignatureAlgorithm.isRSAPSS(signatureAlgorithm))
+        if (!SignatureScheme.isRSAPSS(signatureScheme))
         {
-            throw new IllegalArgumentException("signatureAlgorithm");
+            throw new IllegalArgumentException("signatureScheme");
         }
 
         this.crypto = crypto;
         this.privateKey = privateKey;
-        this.signatureAlgorithm = signatureAlgorithm;
+        this.signatureScheme = signatureScheme;
     }
 
     public byte[] generateRawSignature(SignatureAndHashAlgorithm algorithm, byte[] hash) throws IOException
     {
         throw new UnsupportedOperationException();
+
+        // TODO Can only use this if "RAWRSASSA-PSS" is available
+//        if (algorithm == null || SignatureScheme.from(algorithm) != signatureScheme)
+//        {
+//            throw new IllegalStateException("Invalid algorithm: " + algorithm);
+//        }
+//
+//        int cryptoHashAlgorithm = SignatureScheme.getCryptoHashAlgorithm(signatureScheme);
+//        String digestName = crypto.getDigestName(cryptoHashAlgorithm);
+//
+//        // NOTE: We explicitly set them even though they should be the defaults, because providers vary
+//        AlgorithmParameterSpec pssSpec = RSAUtil.getPSSParameterSpec(cryptoHashAlgorithm, digestName,
+//            crypto.getHelper());
+//
+//        try
+//        {
+//            Signature signer = crypto.getHelper().createSignature("RAWRSASSA-PSS");
+//            signer.setParameter(pssSpec);
+//            signer.initSign(privateKey);
+//            signer.update(hash);
+//            return signer.sign();
+//        }
+//        catch (GeneralSecurityException e)
+//        {
+//            throw new TlsFatalAlert(AlertDescription.internal_error, e);
+//        }
     }
 
     public TlsStreamSigner getStreamSigner(SignatureAndHashAlgorithm algorithm) throws IOException
     {
-        if (algorithm == null
-            || algorithm.getSignature() != signatureAlgorithm
-            || algorithm.getHash() != HashAlgorithm.Intrinsic)
+        if (algorithm == null || SignatureScheme.from(algorithm) != signatureScheme)
         {
             throw new IllegalStateException("Invalid algorithm: " + algorithm);
         }
 
-        short hash = SignatureAlgorithm.getRSAPSSHashAlgorithm(signatureAlgorithm);
-        String digestName = crypto.getDigestName(hash);
+        int cryptoHashAlgorithm = SignatureScheme.getCryptoHashAlgorithm(signatureScheme);
+        String digestName = crypto.getDigestName(cryptoHashAlgorithm);
         String sigName = RSAUtil.getDigestSigAlgName(digestName) + "WITHRSAANDMGF1";
 
         // NOTE: We explicitly set them even though they should be the defaults, because providers vary
-        AlgorithmParameterSpec pssSpec = RSAUtil.getPSSParameterSpec(hash, digestName, crypto.getHelper());
+        AlgorithmParameterSpec pssSpec = RSAUtil.getPSSParameterSpec(cryptoHashAlgorithm, digestName,
+            crypto.getHelper());
 
         return crypto.createStreamSigner(sigName, pssSpec, privateKey, true);
     }

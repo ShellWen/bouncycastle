@@ -1,9 +1,9 @@
 package org.bouncycastle.jcajce.provider.digest;
 
+import java.security.DigestException;
 import java.security.MessageDigest;
 
 import org.bouncycastle.crypto.Digest;
-import org.bouncycastle.crypto.Xof;
 
 public class BCMessageDigest
     extends MessageDigest
@@ -18,15 +18,6 @@ public class BCMessageDigest
 
         this.digest = digest;
         this.digestSize = digest.getDigestSize();
-    }
-
-    protected BCMessageDigest(
-        Xof digest, int outputSize)
-    {
-        super(digest.getAlgorithmName());
-
-        this.digest = digest;
-        this.digestSize = outputSize / 8;
     }
 
     public void engineReset() 
@@ -60,5 +51,17 @@ public class BCMessageDigest
         digest.doFinal(digestBytes, 0);
 
         return digestBytes;
+    }
+
+    public int engineDigest(byte[] buf, int off, int len) throws DigestException
+    {
+        if (len < digestSize)
+            throw new DigestException("partial digests not returned");
+        if (buf.length - off < digestSize)
+            throw new DigestException("insufficient space in the output buffer to store the digest");
+
+        digest.doFinal(buf, off);
+
+        return digestSize;
     }
 }

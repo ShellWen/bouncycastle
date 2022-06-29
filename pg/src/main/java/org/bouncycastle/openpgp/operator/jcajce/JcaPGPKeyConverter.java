@@ -48,6 +48,7 @@ import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.x9.ECNamedCurveTable;
 import org.bouncycastle.asn1.x9.X9ECParameters;
+import org.bouncycastle.asn1.x9.X9ECParametersHolder;
 import org.bouncycastle.asn1.x9.X9ECPoint;
 import org.bouncycastle.bcpg.BCPGKey;
 import org.bouncycastle.bcpg.DSAPublicBCPGKey;
@@ -70,6 +71,7 @@ import org.bouncycastle.jcajce.util.DefaultJcaJceHelper;
 import org.bouncycastle.jcajce.util.NamedJcaJceHelper;
 import org.bouncycastle.jcajce.util.ProviderJcaJceHelper;
 import org.bouncycastle.math.ec.ECPoint;
+import org.bouncycastle.math.ec.rfc8032.Ed25519;
 import org.bouncycastle.openpgp.PGPAlgorithmParameters;
 import org.bouncycastle.openpgp.PGPException;
 import org.bouncycastle.openpgp.PGPKdfParameters;
@@ -192,7 +194,7 @@ public class JcaPGPKeyConverter
                     // 'reverse' because the native format for X25519 private keys is little-endian
                     return implGetPrivateKeyPKCS8("XDH", new PrivateKeyInfo(
                         new AlgorithmIdentifier(EdECObjectIdentifiers.id_X25519),
-                        new DEROctetString(Arrays.reverse(BigIntegers.asUnsignedByteArray(ecdhK.getX())))));
+                        new DEROctetString(Arrays.reverseInPlace(BigIntegers.asUnsignedByteArray(ecdhK.getX())))));
                 }
                 else
                 {
@@ -209,7 +211,7 @@ public class JcaPGPKeyConverter
 
                 return implGetPrivateKeyPKCS8("EdDSA", new PrivateKeyInfo(
                     new AlgorithmIdentifier(EdECObjectIdentifiers.id_Ed25519),
-                    new DEROctetString(BigIntegers.asUnsignedByteArray(eddsaK.getX()))));
+                    new DEROctetString(BigIntegers.asUnsignedByteArray(Ed25519.SECRET_KEY_SIZE, eddsaK.getX()))));
             }
 
             case PublicKeyAlgorithmTags.ELGAMAL_ENCRYPT:
@@ -234,7 +236,7 @@ public class JcaPGPKeyConverter
             }
 
             default:
-                throw new PGPException("unknown public key algorithm encountered");
+                throw new PGPException("unknown public key algorithm encountered: " + pubPk.getAlgorithm());
             }
         }
         catch (PGPException e)
@@ -325,7 +327,7 @@ public class JcaPGPKeyConverter
             }
 
             default:
-                throw new PGPException("unknown public key algorithm encountered");
+                throw new PGPException("unknown public key algorithm encountered: " + publicPk.getAlgorithm());
             }
         }
         catch (PGPException e)
@@ -457,7 +459,7 @@ public class JcaPGPKeyConverter
             // TODO: should probably match curve by comparison as well
             ASN1ObjectIdentifier  curveOid = ASN1ObjectIdentifier.getInstance(keyInfo.getAlgorithm().getParameters());
 
-            X9ECParameters params = ECNamedCurveTable.getByOID(curveOid);
+            X9ECParametersHolder params = ECNamedCurveTable.getByOIDLazy(curveOid);
 
             ASN1OctetString key = new DEROctetString(keyInfo.getPublicKeyData().getBytes());
             X9ECPoint derQ = new X9ECPoint(params.getCurve(), key);

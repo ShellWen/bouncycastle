@@ -42,8 +42,18 @@ public class AllTests
         suite.addTestSuite(Sphincs256KeyPairGeneratorTest.class);
         suite.addTestSuite(XMSSTest.class);
         suite.addTestSuite(XMSSMTTest.class);
-        suite.addTestSuite(QTESLATest.class);
         suite.addTestSuite(LMSTest.class);
+        suite.addTestSuite(SphincsPlusTest.class);
+        suite.addTestSuite(SphincsPlusKeyPairGeneratorTest.class);
+        suite.addTestSuite(PicnicTest.class);
+        suite.addTestSuite(PicnicKeyPairGeneratorTest.class);
+        suite.addTestSuite(CMCEKeyPairGeneratorTest.class);
+        suite.addTestSuite(FrodoTest.class);
+        suite.addTestSuite(FrodoKeyPairGeneratorTest.class);
+        suite.addTestSuite(SABERTest.class);
+        suite.addTestSuite(SABERKeyPairGeneratorTest.class);
+        suite.addTestSuite(SIKETest.class);
+        suite.addTestSuite(SIKEKeyPairGeneratorTest.class);
 
         return new BCTestSetup(suite);
     }

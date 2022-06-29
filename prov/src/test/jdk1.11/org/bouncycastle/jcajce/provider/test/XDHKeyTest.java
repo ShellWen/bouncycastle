@@ -1,26 +1,32 @@
 package org.bouncycastle.jcajce.provider.test;
 
+import java.security.Key;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.Security;
+import java.security.interfaces.XECKey;
 import java.security.interfaces.XECPrivateKey;
 import java.security.interfaces.XECPublicKey;
+import java.security.spec.AlgorithmParameterSpec;
 import java.security.spec.NamedParameterSpec;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 
 import javax.crypto.KeyAgreement;
 
+import org.bouncycastle.jcajce.interfaces.XDHPrivateKey;
+import org.bouncycastle.jcajce.interfaces.XDHPublicKey;
+import org.bouncycastle.jcajce.spec.RawEncodedKeySpec;
+import org.bouncycastle.jcajce.spec.XDHParameterSpec;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.util.Arrays;
+
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
-import org.bouncycastle.jcajce.interfaces.XDHPrivateKey;
-import org.bouncycastle.jcajce.interfaces.XDHPublicKey;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.bouncycastle.util.Arrays;
 
 
 /**
@@ -90,6 +96,37 @@ public class XDHKeyTest
         assertTrue(kp.getPublic() instanceof XDHPublicKey);
     }
 
+    public void testShouldReturnNamedParamSpec()
+        throws Exception
+    {
+        {
+            KeyPairGenerator kpGen = KeyPairGenerator.getInstance("X25519", BC);
+            KeyPair kp = kpGen.generateKeyPair();
+            checkNamedParamSpecXECKey(kp.getPrivate(), "X25519");
+            checkNamedParamSpecXECKey(kp.getPublic(), "X25519");
+        }
+        {
+            KeyPairGenerator kpGen = KeyPairGenerator.getInstance("X448", BC);
+            KeyPair kp = kpGen.generateKeyPair();
+            checkNamedParamSpecXECKey(kp.getPrivate(), "X448");
+            checkNamedParamSpecXECKey(kp.getPublic(), "X448");
+        }
+        {
+            KeyPairGenerator kpGen = KeyPairGenerator.getInstance("XDH", BC);
+            kpGen.initialize(255);
+            KeyPair kp = kpGen.generateKeyPair();
+            checkNamedParamSpecXECKey(kp.getPrivate(), "X25519");
+            checkNamedParamSpecXECKey(kp.getPublic(), "X25519");
+        }
+        {
+            KeyPairGenerator kpGen = KeyPairGenerator.getInstance("XDH", BC);
+            kpGen.initialize(448);
+            KeyPair kp = kpGen.generateKeyPair();
+            checkNamedParamSpecXECKey(kp.getPrivate(), "X448");
+            checkNamedParamSpecXECKey(kp.getPublic(), "X448");
+        }
+    }
+
     public void testShouldEncodeJVMKey()
         throws Exception
     {
@@ -142,30 +179,105 @@ public class XDHKeyTest
             privateKey instanceof XECPrivateKey);
     }
 
-    public void testBCAgreement()
+    public void testInteropX25519()
         throws Exception
     {
-        KeyPairGenerator kpGen1 = KeyPairGenerator.getInstance("X25519", "SunEC");
-        KeyPairGenerator kpGen2 = KeyPairGenerator.getInstance("X25519", "BC");
+        implTestInterop("X25519");
+    }
 
-        KeyAgreement keyAgreement = KeyAgreement.getInstance("XDH", "BC");
+    public void testInteropX448()
+        throws Exception
+    {
+        implTestInterop("X448");
+    }
 
-        KeyPair kp1 = kpGen1.generateKeyPair();
-        KeyPair kp2 = kpGen2.generateKeyPair();
+    private void implTestInterop(String algorithm)
+        throws Exception
+    {
+        KeyPairGenerator kpgSunEC = KeyPairGenerator.getInstance(algorithm, "SunEC");
+        KeyPairGenerator kpgBC = KeyPairGenerator.getInstance(algorithm, "BC");
+
+        KeyAgreement keyAgreementSunEC = KeyAgreement.getInstance(algorithm, "SunEC");
+        KeyAgreement keyAgreementBC = KeyAgreement.getInstance(algorithm, "BC");
+
+        for (int i = 0; i < 10; ++i)
+        {
+            implTestInteropCase(kpgBC, kpgBC, keyAgreementBC);
+            implTestInteropCase(kpgBC, kpgSunEC, keyAgreementBC);
+            implTestInteropCase(kpgSunEC, kpgSunEC, keyAgreementBC);
+            implTestInteropCase(kpgBC, kpgBC, keyAgreementSunEC);
+            implTestInteropCase(kpgBC, kpgSunEC, keyAgreementSunEC);
+//            implTestInteropCase(kpgSunEC, kpgSunEC, keyAgreementSunEC);
+        }
+    }
+
+    private void implTestInteropCase(KeyPairGenerator kpg1, KeyPairGenerator kpg2, KeyAgreement keyAgreement)
+        throws Exception
+    {
+        KeyPair kp1 = kpg1.generateKeyPair();
+        KeyPair kp2 = kpg2.generateKeyPair();
 
         keyAgreement.init(kp1.getPrivate());
-
         keyAgreement.doPhase(kp2.getPublic(), true);
-
         byte[] sec1 = keyAgreement.generateSecret();
 
         keyAgreement.init(kp2.getPrivate());
-
         keyAgreement.doPhase(kp1.getPublic(), true);
-
         byte[] sec2 = keyAgreement.generateSecret();
 
         assertTrue(Arrays.areEqual(sec1, sec2));
+
+        if (kp1.getPrivate() instanceof XDHPrivateKey)
+        {
+            keyAgreement.init(kp2.getPrivate());
+            keyAgreement.doPhase(((XDHPrivateKey)kp1.getPrivate()).getPublicKey(), true);
+            byte[] sec3 = keyAgreement.generateSecret();
+
+            assertTrue(Arrays.areEqual(sec1, sec3));
+        }
+    }
+
+    public void testRawEncodedKeySpec()
+        throws Exception
+    {
+        KeyPair xd1 = generateKP("X448", new XDHParameterSpec(XDHParameterSpec.X448));
+
+        checkRaw(xd1.getPublic(), "X448");
+
+        KeyPair xd2 = generateKP("X25519", new XDHParameterSpec(XDHParameterSpec.X25519));
+
+        checkRaw(xd2.getPublic(), "X25519");
+    }
+
+    private KeyPair generateKP(String algorithm, AlgorithmParameterSpec spec)
+        throws Exception
+    {
+        KeyPairGenerator kpGen = KeyPairGenerator.getInstance(algorithm, "BC");
+
+        kpGen.initialize(spec);
+
+        return kpGen.generateKeyPair();
+    }
+
+    private void checkRaw(PublicKey key, String algorithm)
+        throws Exception
+    {
+        KeyFactory kf = KeyFactory.getInstance(algorithm, "BC");
+
+        RawEncodedKeySpec rawSpec = (RawEncodedKeySpec)kf.getKeySpec(key, RawEncodedKeySpec.class);
+
+        PublicKey pub = kf.generatePublic(rawSpec);
+
+        assertEquals(key, pub);
+    }
+
+    private void checkNamedParamSpecXECKey(Key key, String name)
+    {
+        assertTrue(key instanceof XECKey);
+        AlgorithmParameterSpec params = ((XECKey)key).getParams();
+        assertTrue(params instanceof NamedParameterSpec);
+        NamedParameterSpec spec = (NamedParameterSpec)params;
+        assertEquals(name, spec.getName());
     }
 
     public static void main(String args[])

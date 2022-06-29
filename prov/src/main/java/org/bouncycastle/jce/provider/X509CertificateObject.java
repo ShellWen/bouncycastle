@@ -34,13 +34,13 @@ import javax.security.auth.x500.X500Principal;
 import org.bouncycastle.asn1.ASN1BitString;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Encoding;
+import org.bouncycastle.asn1.ASN1IA5String;
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.DERBitString;
-import org.bouncycastle.asn1.DERIA5String;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.misc.MiscObjectIdentifiers;
@@ -287,7 +287,7 @@ public class X509CertificateObject
 
     public boolean[] getIssuerUniqueID()
     {
-        DERBitString    id = c.getTBSCertificate().getIssuerUniqueId();
+        ASN1BitString    id = c.getTBSCertificate().getIssuerUniqueId();
 
         if (id != null)
         {
@@ -307,7 +307,7 @@ public class X509CertificateObject
 
     public boolean[] getSubjectUniqueID()
     {
-        DERBitString    id = c.getTBSCertificate().getSubjectUniqueId();
+        ASN1BitString    id = c.getTBSCertificate().getSubjectUniqueId();
 
         if (id != null)
         {
@@ -702,11 +702,11 @@ public class X509CertificateObject
                         }
                         else if (oid.equals(MiscObjectIdentifiers.netscapeRevocationURL))
                         {
-                            buf.append(new NetscapeRevocationURL((DERIA5String)dIn.readObject())).append(nl);
+                            buf.append(new NetscapeRevocationURL((ASN1IA5String)dIn.readObject())).append(nl);
                         }
                         else if (oid.equals(MiscObjectIdentifiers.verisignCzagExtension))
                         {
-                            buf.append(new VerisignCzagExtension((DERIA5String)dIn.readObject())).append(nl);
+                            buf.append(new VerisignCzagExtension((ASN1IA5String)dIn.readObject())).append(nl);
                         }
                         else 
                         {

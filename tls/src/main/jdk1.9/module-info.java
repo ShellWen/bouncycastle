@@ -4,11 +4,13 @@ module org.bouncycastle.tls
     
     requires java.logging;
     requires org.bouncycastle.provider;
-    
+    requires org.bouncycastle.util;
+
     exports org.bouncycastle.jsse;
     exports org.bouncycastle.tls;
     exports org.bouncycastle.jsse.provider;
     exports org.bouncycastle.jsse.java.security;
+    exports org.bouncycastle.jsse.util;
     exports org.bouncycastle.tls.crypto;
     exports org.bouncycastle.tls.crypto.impl;
     exports org.bouncycastle.tls.crypto.impl.bc;

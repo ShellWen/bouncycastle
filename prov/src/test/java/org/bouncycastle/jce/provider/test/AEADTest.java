@@ -19,7 +19,7 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 import junit.framework.TestCase;
-import org.bouncycastle.asn1.cms.GCMParameters;
+import org.bouncycastle.internal.asn1.cms.GCMParameters;
 import org.bouncycastle.jcajce.spec.AEADParameterSpec;
 import org.bouncycastle.jcajce.spec.RepeatedSecretKeySpec;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
@@ -91,7 +91,7 @@ public class AEADTest extends SimpleTest
 
         eax.init(Cipher.ENCRYPT_MODE, key, iv);
         byte[] ciphertext = eax.doFinal(new byte[100]);
-        ciphertext[0] = (byte)(ciphertext[0] + 1);  // Tamper
+        ciphertext[ciphertext.length - 1] = (byte)(ciphertext[ciphertext.length - 1] + 1);  // Tamper
 
         try
         {

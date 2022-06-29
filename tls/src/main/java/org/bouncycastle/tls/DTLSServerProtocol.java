@@ -161,7 +161,13 @@ public class DTLSServerProtocol
         }
 
         state.keyExchange = TlsUtils.initKeyExchangeServer(state.serverContext, state.server);
-        state.serverCredentials = TlsUtils.establishServerCredentials(state.server);
+
+        state.serverCredentials = null;
+
+        if (!KeyExchangeAlgorithm.isAnonymous(securityParameters.getKeyExchangeAlgorithm()))
+        {
+            state.serverCredentials = TlsUtils.establishServerCredentials(state.server);
+        }
 
         // Server certificate
         {
@@ -232,17 +238,34 @@ public class DTLSServerProtocol
 
                 TlsUtils.establishServerSigAlgs(securityParameters, state.certificateRequest);
 
-                TlsUtils.trackHashAlgorithms(handshake.getHandshakeHash(), securityParameters.getServerSigAlgs());
+                if (ProtocolVersion.DTLSv12.equals(securityParameters.getNegotiatedVersion()))
+                {
+                    TlsUtils.trackHashAlgorithms(handshake.getHandshakeHash(), securityParameters.getServerSigAlgs());
 
-                byte[] certificateRequestBody = generateCertificateRequest(state, state.certificateRequest);
-                handshake.sendMessage(HandshakeType.certificate_request, certificateRequestBody);
+                    if (state.serverContext.getCrypto().hasAnyStreamVerifiers(securityParameters.getServerSigAlgs()))
+                    {
+                        handshake.getHandshakeHash().forceBuffering();
+                    }
+                }
+                else
+                {
+                    if (state.serverContext.getCrypto().hasAnyStreamVerifiersLegacy(state.certificateRequest.getCertificateTypes()))
+                    {
+                        handshake.getHandshakeHash().forceBuffering();
+                    }
+                }
             }
         }
 
-        handshake.sendMessage(HandshakeType.server_hello_done, TlsUtils.EMPTY_BYTES);
+        handshake.getHandshakeHash().sealHashAlgorithms();
 
-        boolean forceBuffering = false;
-        TlsUtils.sealHandshakeHash(state.serverContext, handshake.getHandshakeHash(), forceBuffering);
+        if (null != state.certificateRequest)
+        {
+            byte[] certificateRequestBody = generateCertificateRequest(state, state.certificateRequest);
+            handshake.sendMessage(HandshakeType.certificate_request, certificateRequestBody);
+        }
+
+        handshake.sendMessage(HandshakeType.server_hello_done, TlsUtils.EMPTY_BYTES);
 
         clientMessage = handshake.receiveMessage();
 
@@ -304,12 +327,17 @@ public class DTLSServerProtocol
          * parameters).
          */
         {
-            TlsHandshakeHash certificateVerifyHash = handshake.prepareToFinish();
-
             if (expectCertificateVerifyMessage(state))
             {
-                byte[] certificateVerifyBody = handshake.receiveMessageBody(HandshakeType.certificate_verify);
-                processCertificateVerify(state, certificateVerifyBody, certificateVerifyHash);
+                clientMessage = handshake.receiveMessageDelayedDigest(HandshakeType.certificate_verify);
+                byte[] certificateVerifyBody = clientMessage.getBody();
+                processCertificateVerify(state, certificateVerifyBody, handshake.getHandshakeHash());
+                handshake.prepareToFinish();
+                handshake.updateHandshakeMessagesDigest(clientMessage);
+            }
+            else
+            {
+                handshake.prepareToFinish();
             }
         }
 
@@ -320,6 +348,11 @@ public class DTLSServerProtocol
 
         if (state.expectSessionTicket)
         {
+            /*
+             * TODO[new_session_ticket] Check the server-side rules regarding the session ID, since the client
+             * is going to ignore any session ID it received once it sees the new_session_ticket message.
+             */
+
             NewSessionTicket newSessionTicket = state.server.getNewSessionTicket();
             byte[] newSessionTicketBody = generateNewSessionTicket(state, newSessionTicket);
             handshake.sendMessage(HandshakeType.new_session_ticket, newSessionTicketBody);
@@ -606,7 +639,10 @@ public class DTLSServerProtocol
     {
         ByteArrayInputStream buf = new ByteArrayInputStream(body);
 
-        Certificate clientCertificate = Certificate.parse(state.serverContext, buf, null);
+        Certificate.ParseOptions options = new Certificate.ParseOptions()
+            .setMaxChainLength(state.server.getMaxCertificateChainLength());
+
+        Certificate clientCertificate = Certificate.parse(options, state.serverContext, buf, null);
 
         TlsProtocol.assertEmpty(buf);
 

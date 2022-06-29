@@ -7,14 +7,14 @@ import java.util.Set;
 import org.bouncycastle.tls.CipherSuite;
 import org.bouncycastle.tls.CipherType;
 import org.bouncycastle.tls.EncryptionAlgorithm;
-import org.bouncycastle.tls.HashAlgorithm;
 import org.bouncycastle.tls.KeyExchangeAlgorithm;
 import org.bouncycastle.tls.MACAlgorithm;
 import org.bouncycastle.tls.TlsUtils;
+import org.bouncycastle.tls.crypto.CryptoHashAlgorithm;
 
 class CipherSuiteInfo
 {
-    static CipherSuiteInfo forCipherSuite(int cipherSuite, String name, boolean isTLSv13)
+    static CipherSuiteInfo forCipherSuite(int cipherSuite, String name)
     {
         if (!name.startsWith("TLS_"))
         {
@@ -23,7 +23,7 @@ class CipherSuiteInfo
 
         int encryptionAlgorithm = TlsUtils.getEncryptionAlgorithm(cipherSuite);
         int encryptionAlgorithmType = TlsUtils.getEncryptionAlgorithmType(encryptionAlgorithm);
-        short hashAlgorithm = getHashAlgorithm(cipherSuite);
+        int cryptoHashAlgorithm = getCryptoHashAlgorithm(cipherSuite);
         int keyExchangeAlgorithm = TlsUtils.getKeyExchangeAlgorithm(cipherSuite);
         int macAlgorithm = TlsUtils.getMACAlgorithm(cipherSuite);
 
@@ -31,9 +31,13 @@ class CipherSuiteInfo
         decomposeKeyExchangeAlgorithm(decompositionX509, keyExchangeAlgorithm);
 
         Set<String> decompositionTLS = new HashSet<String>(decompositionX509);
+        decomposeKeyExchangeAlgorithmTLS(decompositionTLS, keyExchangeAlgorithm);
+
         decomposeEncryptionAlgorithm(decompositionTLS, encryptionAlgorithm);
-        decomposeHashAlgorithm(decompositionTLS, hashAlgorithm);
+        decomposeHashAlgorithm(decompositionTLS, cryptoHashAlgorithm);
         decomposeMACAlgorithm(decompositionTLS, encryptionAlgorithmType, macAlgorithm);
+
+        boolean isTLSv13 = (KeyExchangeAlgorithm.NULL == keyExchangeAlgorithm);
 
         return new CipherSuiteInfo(cipherSuite, name, isTLSv13, Collections.unmodifiableSet(decompositionTLS),
             Collections.unmodifiableSet(decompositionX509));
@@ -151,26 +155,36 @@ class CipherSuiteInfo
         case EncryptionAlgorithm.NULL:
             decomposition.add("C_NULL");
             break;
+        case EncryptionAlgorithm.SM4_CBC:
+            decomposition.add("SM4_CBC");
+            break;
+        case EncryptionAlgorithm.SM4_CCM:
+            decomposition.add("SM4_CCM");
+            break;
+        case EncryptionAlgorithm.SM4_GCM:
+            decomposition.add("SM4_GCM");
+            break;
         default:
             throw new IllegalArgumentException();
         }
     }
 
-    private static void decomposeHashAlgorithm(Set<String> decomposition, short hashAlgorithm)
+    private static void decomposeHashAlgorithm(Set<String> decomposition, int cryptoHashAlgorithm)
     {
-        switch (hashAlgorithm)
+        switch (cryptoHashAlgorithm)
         {
-        case HashAlgorithm.none:
-            break;
-        case HashAlgorithm.sha256:
+        case CryptoHashAlgorithm.sha256:
             addAll(decomposition, "SHA256", "SHA-256", "HmacSHA256");
             break;
-        case HashAlgorithm.sha384:
+        case CryptoHashAlgorithm.sha384:
             addAll(decomposition, "SHA384", "SHA-384", "HmacSHA384");
             break;
-//        case HashAlgorithm.sha512:
+//        case CryptoHashAlgorithm.sha512:
 //            addAll(decomposition, "SHA512", "SHA-512", "HmacSHA512");
 //            break;
+        case CryptoHashAlgorithm.sm3:
+            addAll(decomposition, "SM3", "HmacSM3");
+            break;
         default:
             throw new IllegalArgumentException();
         }
@@ -192,12 +206,41 @@ class CipherSuiteInfo
         case KeyExchangeAlgorithm.ECDHE_RSA:
             addAll(decomposition, "ECDHE", "RSA", "ECDHE_RSA");
             break;
-        case KeyExchangeAlgorithm.NULL:
-            // NOTE: TLS 1.3 cipher suites
-            break;
         case KeyExchangeAlgorithm.RSA:
             addAll(decomposition, "RSA");
             break;
+
+        case KeyExchangeAlgorithm.DH_anon:
+        case KeyExchangeAlgorithm.ECDH_anon:
+        case KeyExchangeAlgorithm.NULL:
+            break;
+
+        default:
+            throw new IllegalArgumentException();
+        }
+    }
+
+    private static void decomposeKeyExchangeAlgorithmTLS(Set<String> decompositionTLS, int keyExchangeAlgorithm)
+    {
+        switch (keyExchangeAlgorithm)
+        {
+        case KeyExchangeAlgorithm.DH_anon:
+            addAll(decompositionTLS, "ANON", "DH", "DiffieHellman", "DH_ANON");
+            break;
+        case KeyExchangeAlgorithm.ECDH_anon:
+            addAll(decompositionTLS, "ANON", "ECDH", "ECDH_ANON");
+            break;
+        case KeyExchangeAlgorithm.NULL:
+            addAll(decompositionTLS, "K_NULL");
+            break;
+
+        case KeyExchangeAlgorithm.DHE_DSS:
+        case KeyExchangeAlgorithm.DHE_RSA:
+        case KeyExchangeAlgorithm.ECDHE_ECDSA:
+        case KeyExchangeAlgorithm.ECDHE_RSA:
+        case KeyExchangeAlgorithm.RSA:
+            break;
+
         default:
             throw new IllegalArgumentException();
         }
@@ -233,10 +276,14 @@ class CipherSuiteInfo
         }
     }
 
-    private static short getHashAlgorithm(int cipherSuite)
+    private static int getCryptoHashAlgorithm(int cipherSuite)
     {
         switch (cipherSuite)
         {
+        case CipherSuite.TLS_DH_anon_WITH_AES_128_CBC_SHA:
+        case CipherSuite.TLS_DH_anon_WITH_AES_256_CBC_SHA:
+        case CipherSuite.TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA:
+        case CipherSuite.TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA:
         case CipherSuite.TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA:
         case CipherSuite.TLS_DHE_DSS_WITH_AES_128_CBC_SHA:
         case CipherSuite.TLS_DHE_DSS_WITH_AES_256_CBC_SHA:
@@ -247,6 +294,9 @@ class CipherSuiteInfo
         case CipherSuite.TLS_DHE_RSA_WITH_AES_256_CBC_SHA:
         case CipherSuite.TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA:
         case CipherSuite.TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA:
+        case CipherSuite.TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA:
+        case CipherSuite.TLS_ECDH_anon_WITH_AES_128_CBC_SHA:
+        case CipherSuite.TLS_ECDH_anon_WITH_AES_256_CBC_SHA:
         case CipherSuite.TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA:
         case CipherSuite.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA:
         case CipherSuite.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA:
@@ -265,12 +315,20 @@ class CipherSuiteInfo
              * TODO[jsse] We follow SunJSSE behaviour here, but it's not quite right; these cipher
              * suites will actually use the legacy PRF based on MD5/SHA1 for TLS 1.1 or earlier.
              */
-            return HashAlgorithm.sha256;
+            return CryptoHashAlgorithm.sha256;
 
         case CipherSuite.TLS_AES_128_CCM_SHA256:
         case CipherSuite.TLS_AES_128_CCM_8_SHA256:
         case CipherSuite.TLS_AES_128_GCM_SHA256:
         case CipherSuite.TLS_CHACHA20_POLY1305_SHA256:
+        case CipherSuite.TLS_DH_anon_WITH_AES_128_CBC_SHA256:
+        case CipherSuite.TLS_DH_anon_WITH_AES_128_GCM_SHA256:
+        case CipherSuite.TLS_DH_anon_WITH_AES_256_CBC_SHA256:
+        case CipherSuite.TLS_DH_anon_WITH_ARIA_128_CBC_SHA256:
+        case CipherSuite.TLS_DH_anon_WITH_ARIA_128_GCM_SHA256:
+        case CipherSuite.TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA256:
+        case CipherSuite.TLS_DH_anon_WITH_CAMELLIA_128_GCM_SHA256:
+        case CipherSuite.TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA256:
         case CipherSuite.TLS_DHE_DSS_WITH_AES_128_CBC_SHA256:
         case CipherSuite.TLS_DHE_DSS_WITH_AES_128_GCM_SHA256:
         case CipherSuite.TLS_DHE_DSS_WITH_AES_256_CBC_SHA256:
@@ -323,9 +381,13 @@ class CipherSuiteInfo
         case CipherSuite.TLS_RSA_WITH_CAMELLIA_128_GCM_SHA256:
         case CipherSuite.TLS_RSA_WITH_CAMELLIA_256_CBC_SHA256:
         case CipherSuite.TLS_RSA_WITH_NULL_SHA256:
-            return HashAlgorithm.sha256;
+            return CryptoHashAlgorithm.sha256;
 
         case CipherSuite.TLS_AES_256_GCM_SHA384:
+        case CipherSuite.TLS_DH_anon_WITH_AES_256_GCM_SHA384:
+        case CipherSuite.TLS_DH_anon_WITH_ARIA_256_CBC_SHA384:
+        case CipherSuite.TLS_DH_anon_WITH_ARIA_256_GCM_SHA384:
+        case CipherSuite.TLS_DH_anon_WITH_CAMELLIA_256_GCM_SHA384:
         case CipherSuite.TLS_DHE_DSS_WITH_AES_256_GCM_SHA384:
         case CipherSuite.TLS_DHE_DSS_WITH_ARIA_256_CBC_SHA384:
         case CipherSuite.TLS_DHE_DSS_WITH_ARIA_256_GCM_SHA384:
@@ -350,7 +412,11 @@ class CipherSuiteInfo
         case CipherSuite.TLS_RSA_WITH_ARIA_256_CBC_SHA384:
         case CipherSuite.TLS_RSA_WITH_ARIA_256_GCM_SHA384:
         case CipherSuite.TLS_RSA_WITH_CAMELLIA_256_GCM_SHA384:
-            return HashAlgorithm.sha384;
+            return CryptoHashAlgorithm.sha384;
+
+        case CipherSuite.TLS_SM4_CCM_SM3:
+        case CipherSuite.TLS_SM4_GCM_SM3:
+            return CryptoHashAlgorithm.sm3;
 
         default:
             throw new IllegalArgumentException();
@@ -390,6 +456,12 @@ class CipherSuiteInfo
             return "ChaCha20-Poly1305";
         case EncryptionAlgorithm.NULL:
             return "NULL";
+        case EncryptionAlgorithm.SM4_CBC:
+            return "SM4/CBC/NoPadding";
+        case EncryptionAlgorithm.SM4_CCM:
+            return "SM4/CCM/NoPadding";
+        case EncryptionAlgorithm.SM4_GCM:
+            return "SM4/GCM/NoPadding";
         default:
             throw new IllegalArgumentException();
         }

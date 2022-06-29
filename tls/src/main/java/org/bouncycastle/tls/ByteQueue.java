@@ -2,6 +2,7 @@ package org.bouncycastle.tls;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
 
 /**
  * A queue for bytes. This file could be more optimized.
@@ -74,9 +75,18 @@ public class ByteQueue
             throw new IllegalStateException("Cannot add data to read-only buffer");
         }
 
-        if ((skipped + available + len) > databuf.length)
+        if (available == 0)
         {
-            int desiredSize = ByteQueue.nextTwoPow(available + len);
+            if (len > databuf.length)
+            {
+                int desiredSize = nextTwoPow(len | 256);
+                databuf = new byte[desiredSize];
+            }
+            skipped = 0;
+        }
+        else if ((skipped + available + len) > databuf.length)
+        {
+            int desiredSize = nextTwoPow(available + len);
             if (desiredSize > databuf.length)
             {
                 byte[] tmp = new byte[desiredSize];
@@ -141,13 +151,35 @@ public class ByteQueue
     }
 
     /**
+     * Read data from the buffer.
+     *
+     * @param buf    The {@link ByteBuffer} where the read data will be copied to.
+     * @param len    How many bytes to read at all.
+     * @param skip   How many bytes from our data to skip.
+     */
+    public void read(ByteBuffer buf, int len, int skip)
+    {
+        int remaining = buf.remaining();
+        if (remaining < len)
+        {
+            throw new IllegalArgumentException(
+                "Buffer size of " + remaining + " is too small for a read of " + len + " bytes");
+        }
+        if ((available - skip) < len)
+        {
+            throw new IllegalStateException("Not enough data to read");
+        }
+        buf.put(databuf, skipped + skip, len);
+    }
+
+    /**
      * Return a {@link HandshakeMessageInput} over some bytes at the beginning of the data.
      * 
      * @param length
      *            How many bytes will be readable.
      * @return A {@link HandshakeMessageInput} over the data.
      */
-    public HandshakeMessageInput readHandshakeMessage(int length)
+    HandshakeMessageInput readHandshakeMessage(int length)
     {
         if (length > available)
         {
@@ -169,6 +201,15 @@ public class ByteQueue
             throw new IllegalStateException("Not enough data to read");
         }
         return TlsUtils.readInt32(databuf, skipped);
+    }
+
+    public int readUint16(int skip)
+    {
+        if (available < skip + 2)
+        {
+            throw new IllegalStateException("Not enough data to read");
+        }
+        return TlsUtils.readUint16(databuf, skipped + skip);
     }
 
     /**
@@ -204,6 +245,19 @@ public class ByteQueue
         removeData(skip + len);
     }
 
+    /**
+     * Remove data from the buffer.
+     *
+     * @param buf The {@link ByteBuffer} where the removed data will be copied to.
+     * @param len How many bytes to read at all.
+     * @param skip How many bytes from our data to skip.
+     */
+    public void removeData(ByteBuffer buf, int len, int skip)
+    {
+        read(buf, len, skip);
+        removeData(skip + len);
+    }
+
     public byte[] removeData(int len, int skip)
     {
         byte[] buf = new byte[len];
@@ -220,7 +274,7 @@ public class ByteQueue
         }
         else
         {
-            int desiredSize = ByteQueue.nextTwoPow(available);
+            int desiredSize = nextTwoPow(available);
             if (desiredSize < databuf.length)
             {
                 byte[] tmp = new byte[desiredSize];

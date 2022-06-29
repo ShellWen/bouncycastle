@@ -5,9 +5,8 @@ import java.math.BigInteger;
 
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
-import org.bouncycastle.tls.ConnectionEnd;
-import org.bouncycastle.tls.KeyExchangeAlgorithm;
 import org.bouncycastle.tls.SignatureAlgorithm;
+import org.bouncycastle.tls.SignatureScheme;
 
 /**
  * Interface providing the functional representation of a single X.509 certificate.
@@ -15,10 +14,25 @@ import org.bouncycastle.tls.SignatureAlgorithm;
 public interface TlsCertificate
 {
     /**
+     * Return an encryptor based on the public key in this certificate.
+     *
+     * @param tlsCertificateRole
+     *            {@link TlsCertificateRole}
+     * @return a TlsEncryptor based on this certificate's public key.
+     */
+    TlsEncryptor createEncryptor(int tlsCertificateRole) throws IOException;
+
+    /**
      * @param signatureAlgorithm
      *            {@link SignatureAlgorithm}
      */
     TlsVerifier createVerifier(short signatureAlgorithm) throws IOException;
+
+    /**
+     * @param signatureScheme
+     *            {@link SignatureScheme}
+     */
+    Tls13Verifier createVerifier(int signatureScheme) throws IOException;
 
     byte[] getEncoded() throws IOException;
 
@@ -47,11 +61,8 @@ public interface TlsCertificate
     boolean supportsSignatureAlgorithmCA(short signatureAlgorithm) throws IOException;
 
     /**
-     * @param connectionEnd
-     *            {@link ConnectionEnd}
-     * @param keyExchangeAlgorithm
-     *            {@link KeyExchangeAlgorithm}
+     * @param tlsCertificateRole
+     *            {@link TlsCertificateRole}
      */
-    // TODO[tls-ops] This is expected to be only transitional and eventually redundant
-    TlsCertificate useInRole(int connectionEnd, int keyExchangeAlgorithm) throws IOException;
+    TlsCertificate checkUsageInRole(int tlsCertificateRole) throws IOException;
 }

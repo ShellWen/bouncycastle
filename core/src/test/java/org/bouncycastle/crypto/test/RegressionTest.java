@@ -175,7 +175,13 @@ public class RegressionTest
             new Haraka256DigestTest(),
             new Haraka512DigestTest(),
             new KMACTest(),
-            new SipHash128Test()
+            new SipHash128Test(),
+            new GCMSIVTest(),
+            new Blake3Test(),
+            new KangarooTest(),
+            new SP80038GTest(),
+            new TupleHashTest(),
+            new ParallelHashTest()
         };
 
     public static void main(String[] args)

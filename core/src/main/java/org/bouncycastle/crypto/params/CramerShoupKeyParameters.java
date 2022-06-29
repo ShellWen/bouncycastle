@@ -1,40 +1,51 @@
 package org.bouncycastle.crypto.params;
 
-public class CramerShoupKeyParameters extends AsymmetricKeyParameter {
-	
-	private CramerShoupParameters params;
+public class CramerShoupKeyParameters
+    extends AsymmetricKeyParameter
+{
 
-	protected CramerShoupKeyParameters(boolean isPrivate, CramerShoupParameters params) {
-		super(isPrivate);
+    private CramerShoupParameters params;
 
-		this.params = params;
-	}
+    protected CramerShoupKeyParameters(boolean isPrivate, CramerShoupParameters params)
+    {
+        super(isPrivate);
 
-	public CramerShoupParameters getParameters() {
-		return params;
-	}
+        this.params = params;
+    }
 
-	public boolean equals(Object obj) {
-		if (!(obj instanceof CramerShoupKeyParameters)) {
-			return false;
-		}
+    public CramerShoupParameters getParameters()
+    {
+        return params;
+    }
 
-		CramerShoupKeyParameters csKey = (CramerShoupKeyParameters) obj;
+    public boolean equals(Object obj)
+    {
+        if (!(obj instanceof CramerShoupKeyParameters))
+        {
+            return false;
+        }
 
-		if (params == null) {
-			return csKey.getParameters() == null;
-		} else {
-			return params.equals(csKey.getParameters());
-		}
-	}
+        CramerShoupKeyParameters csKey = (CramerShoupKeyParameters)obj;
 
-	public int hashCode() {
-		int code = isPrivate() ? 0 : 1;
+        if (params == null)
+        {
+            return csKey.getParameters() == null;
+        }
+        else
+        {
+            return params.equals(csKey.getParameters());
+        }
+    }
 
-		if (params != null) {
-			code ^= params.hashCode();
-		}
+    public int hashCode()
+    {
+        int code = isPrivate() ? 0 : 1;
 
-		return code;
-	}
+        if (params != null)
+        {
+            code ^= params.hashCode();
+        }
+
+        return code;
+    }
 }

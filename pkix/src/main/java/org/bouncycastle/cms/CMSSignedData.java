@@ -21,7 +21,6 @@ import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.BERSequence;
-import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.DLSet;
 import org.bouncycastle.asn1.cms.ContentInfo;
 import org.bouncycastle.asn1.cms.SignedData;
@@ -30,6 +29,7 @@ import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.cert.X509AttributeCertificateHolder;
 import org.bouncycastle.cert.X509CRLHolder;
 import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.operator.DefaultDigestAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.util.Encodable;
 import org.bouncycastle.util.Store;
@@ -66,7 +66,8 @@ public class CMSSignedData
     implements Encodable
 {
     private static final CMSSignedHelper HELPER = CMSSignedHelper.INSTANCE;
-    
+    private static final DefaultDigestAlgorithmIdentifierFinder dgstAlgFinder = new DefaultDigestAlgorithmIdentifierFinder();
+
     SignedData              signedData;
     ContentInfo             contentInfo;
     CMSTypedData            signedContent;
@@ -481,6 +482,72 @@ public class CMSSignedData
     }
 
     /**
+     * Return a new CMSSignedData which guarantees to have the passed in digestAlgorithm
+     * in it.
+     *
+     * @param signedData the signed data object to be used as a base.
+     * @param digestAlgorithm the digest algorithm to be added to the signed data.
+     * @return a new signed data object.
+     */
+    public static CMSSignedData addDigestAlgorithm(
+        CMSSignedData           signedData,
+        AlgorithmIdentifier     digestAlgorithm)
+    {
+        Set<AlgorithmIdentifier>   digestAlgorithms = signedData.getDigestAlgorithmIDs();
+        AlgorithmIdentifier        digestAlg = CMSSignedHelper.INSTANCE.fixDigestAlgID(digestAlgorithm, dgstAlgFinder);
+
+        //
+        // if the algorithm is already present there is no need to add it.
+        //
+        if (digestAlgorithms.contains(digestAlg))
+        {
+            return signedData;
+        }
+
+        //
+        // copy
+        //
+        CMSSignedData   cms = new CMSSignedData(signedData);
+
+        //
+        // build up the new set
+        //
+        Set<AlgorithmIdentifier> digestAlgs = new HashSet<AlgorithmIdentifier>();
+
+        Iterator    it = digestAlgorithms.iterator();
+        while (it.hasNext())
+        {
+            digestAlgs.add(CMSSignedHelper.INSTANCE.fixDigestAlgID((AlgorithmIdentifier)it.next(), dgstAlgFinder));
+        }
+        digestAlgs.add(digestAlg);
+
+        ASN1Set             digests = CMSUtils.convertToDlSet(digestAlgs);
+        ASN1Sequence        sD = (ASN1Sequence)signedData.signedData.toASN1Primitive();
+
+        ASN1EncodableVector vec = new ASN1EncodableVector();
+
+        //
+        // signers are the last item in the sequence.
+        //
+        vec.add(sD.getObjectAt(0)); // version
+        vec.add(digests);
+
+        for (int i = 2; i != sD.size(); i++)
+        {
+            vec.add(sD.getObjectAt(i));
+        }
+
+        cms.signedData = SignedData.getInstance(new BERSequence(vec));
+
+        //
+        // replace the contentInfo with the new one
+        //
+        cms.contentInfo = new ContentInfo(cms.contentInfo.getContentType(), cms.signedData);
+
+        return cms;
+    }
+
+    /**
      * Replace the SignerInformation store associated with this
      * CMSSignedData object with the new one passed in. You would
      * probably only want to do this if you wanted to change the unsigned 
@@ -507,23 +574,23 @@ public class CMSSignedData
         //
         // replace the signers in the SignedData object
         //
-        ASN1EncodableVector digestAlgs = new ASN1EncodableVector();
+        Set<AlgorithmIdentifier> digestAlgs = new HashSet<AlgorithmIdentifier>();
         ASN1EncodableVector vec = new ASN1EncodableVector();
         
         Iterator    it = signerInformationStore.getSigners().iterator();
         while (it.hasNext())
         {
             SignerInformation signer = (SignerInformation)it.next();
-            digestAlgs.add(CMSSignedHelper.INSTANCE.fixAlgID(signer.getDigestAlgorithmID()));
+            CMSUtils.addDigestAlgs(digestAlgs, signer, dgstAlgFinder);
             vec.add(signer.toASN1Structure());
         }
 
-        ASN1Set             digests = new DERSet(digestAlgs);
+        ASN1Set             digests = CMSUtils.convertToDlSet(digestAlgs);
         ASN1Set             signers = new DLSet(vec);
         ASN1Sequence        sD = (ASN1Sequence)signedData.signedData.toASN1Primitive();
 
         vec = new ASN1EncodableVector();
-        
+
         //
         // signers are the last item in the sequence.
         //
@@ -534,16 +601,16 @@ public class CMSSignedData
         {
             vec.add(sD.getObjectAt(i));
         }
-        
+
         vec.add(signers);
-        
+
         cms.signedData = SignedData.getInstance(new BERSequence(vec));
-        
+
         //
         // replace the contentInfo with the new one
         //
         cms.contentInfo = new ContentInfo(cms.contentInfo.getContentType(), cms.signedData);
-        
+
         return cms;
     }
 

@@ -20,12 +20,14 @@ public class AllTests
         TestSuite suite = new TestSuite("TSP Tests");
         
         suite.addTestSuite(ParseTest.class);
+        suite.addTestSuite(PQCTSPTest.class);
         suite.addTestSuite(NewTSPTest.class);
         suite.addTestSuite(CMSTimeStampedDataTest.class);
         suite.addTestSuite(CMSTimeStampedDataParserTest.class);
         suite.addTestSuite(CMSTimeStampedDataGeneratorTest.class);
         suite.addTestSuite(GenTimeAccuracyUnitTest.class);
         suite.addTestSuite(TimeStampTokenInfoUnitTest.class);
+        suite.addTestSuite(ERSTest.class);
 
         return new BCTestSetup(suite);
     }

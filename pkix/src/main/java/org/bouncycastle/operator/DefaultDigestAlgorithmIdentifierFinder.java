@@ -8,6 +8,7 @@ import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.DERNull;
 import org.bouncycastle.asn1.bc.BCObjectIdentifiers;
 import org.bouncycastle.asn1.bsi.BSIObjectIdentifiers;
+import org.bouncycastle.asn1.cms.CMSObjectIdentifiers;
 import org.bouncycastle.asn1.cryptopro.CryptoProObjectIdentifiers;
 import org.bouncycastle.asn1.eac.EACObjectIdentifiers;
 import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
@@ -26,6 +27,7 @@ public class DefaultDigestAlgorithmIdentifierFinder
 {
     private static Map digestOids = new HashMap();
     private static Map digestNameToOids = new HashMap();
+    private static Map digestOidToAlgIds = new HashMap();
 
     static
     {
@@ -41,6 +43,8 @@ public class DefaultDigestAlgorithmIdentifierFinder
         digestOids.put(PKCSObjectIdentifiers.sha256WithRSAEncryption, NISTObjectIdentifiers.id_sha256);
         digestOids.put(PKCSObjectIdentifiers.sha384WithRSAEncryption, NISTObjectIdentifiers.id_sha384);
         digestOids.put(PKCSObjectIdentifiers.sha512WithRSAEncryption, NISTObjectIdentifiers.id_sha512);
+        digestOids.put(PKCSObjectIdentifiers.sha512_224WithRSAEncryption, NISTObjectIdentifiers.id_sha512_224);
+        digestOids.put(PKCSObjectIdentifiers.sha512_256WithRSAEncryption, NISTObjectIdentifiers.id_sha512_256);
         digestOids.put(PKCSObjectIdentifiers.md2WithRSAEncryption, PKCSObjectIdentifiers.md2);
         digestOids.put(PKCSObjectIdentifiers.md4WithRSAEncryption, PKCSObjectIdentifiers.md4);
         digestOids.put(PKCSObjectIdentifiers.md5WithRSAEncryption, PKCSObjectIdentifiers.md5);
@@ -58,6 +62,10 @@ public class DefaultDigestAlgorithmIdentifierFinder
         digestOids.put(BSIObjectIdentifiers.ecdsa_plain_SHA256, NISTObjectIdentifiers.id_sha256);
         digestOids.put(BSIObjectIdentifiers.ecdsa_plain_SHA384, NISTObjectIdentifiers.id_sha384);
         digestOids.put(BSIObjectIdentifiers.ecdsa_plain_SHA512, NISTObjectIdentifiers.id_sha512);
+        digestOids.put(BSIObjectIdentifiers.ecdsa_plain_SHA3_224, NISTObjectIdentifiers.id_sha3_224);
+        digestOids.put(BSIObjectIdentifiers.ecdsa_plain_SHA3_256, NISTObjectIdentifiers.id_sha3_256);
+        digestOids.put(BSIObjectIdentifiers.ecdsa_plain_SHA3_384, NISTObjectIdentifiers.id_sha3_384);
+        digestOids.put(BSIObjectIdentifiers.ecdsa_plain_SHA3_512, NISTObjectIdentifiers.id_sha3_512);
         digestOids.put(BSIObjectIdentifiers.ecdsa_plain_RIPEMD160, TeleTrusTObjectIdentifiers.ripemd160);
 
         digestOids.put(EACObjectIdentifiers.id_TA_ECDSA_SHA_1, OIWObjectIdentifiers.idSHA1);
@@ -96,6 +104,10 @@ public class DefaultDigestAlgorithmIdentifierFinder
         digestOids.put(BCObjectIdentifiers.sphincs256_with_SHA3_512, NISTObjectIdentifiers.id_sha3_512);
         digestOids.put(BCObjectIdentifiers.sphincs256_with_SHA512, NISTObjectIdentifiers.id_sha512);
 
+        digestOids.put(BCObjectIdentifiers.sphincsPlus_shake_256, NISTObjectIdentifiers.id_shake256);
+        digestOids.put(BCObjectIdentifiers.sphincsPlus_sha_256, NISTObjectIdentifiers.id_sha256);
+        digestOids.put(BCObjectIdentifiers.sphincsPlus_sha_512, NISTObjectIdentifiers.id_sha512);
+
 //        digestOids.put(GMObjectIdentifiers.sm2sign_with_rmd160, TeleTrusTObjectIdentifiers.ripemd160);
 //        digestOids.put(GMObjectIdentifiers.sm2sign_with_sha1, OIWObjectIdentifiers.idSHA1);
 //        digestOids.put(GMObjectIdentifiers.sm2sign_with_sha224, NISTObjectIdentifiers.id_sha224);
@@ -103,6 +115,11 @@ public class DefaultDigestAlgorithmIdentifierFinder
 //        digestOids.put(GMObjectIdentifiers.sm2sign_with_sha384, NISTObjectIdentifiers.id_sha384);
 //        digestOids.put(GMObjectIdentifiers.sm2sign_with_sha512, NISTObjectIdentifiers.id_sha512);
         digestOids.put(GMObjectIdentifiers.sm2sign_with_sm3, GMObjectIdentifiers.sm3);
+
+        digestOids.put(CMSObjectIdentifiers.id_RSASSA_PSS_SHAKE128, NISTObjectIdentifiers.id_shake128);
+        digestOids.put(CMSObjectIdentifiers.id_RSASSA_PSS_SHAKE256, NISTObjectIdentifiers.id_shake256);
+        digestOids.put(CMSObjectIdentifiers.id_ecdsa_with_shake128, NISTObjectIdentifiers.id_shake128);
+        digestOids.put(CMSObjectIdentifiers.id_ecdsa_with_shake256, NISTObjectIdentifiers.id_shake256);
 
         digestNameToOids.put("SHA-1", OIWObjectIdentifiers.idSHA1);
         digestNameToOids.put("SHA-224", NISTObjectIdentifiers.id_sha224);
@@ -125,6 +142,8 @@ public class DefaultDigestAlgorithmIdentifierFinder
         digestNameToOids.put("SHA3-384", NISTObjectIdentifiers.id_sha3_384);
         digestNameToOids.put("SHA3-512", NISTObjectIdentifiers.id_sha3_512);
 
+        digestNameToOids.put("SHAKE128", NISTObjectIdentifiers.id_shake128);
+        digestNameToOids.put("SHAKE256", NISTObjectIdentifiers.id_shake256);
         digestNameToOids.put("SHAKE-128", NISTObjectIdentifiers.id_shake128);
         digestNameToOids.put("SHAKE-256", NISTObjectIdentifiers.id_shake256);
 
@@ -141,34 +160,126 @@ public class DefaultDigestAlgorithmIdentifierFinder
         digestNameToOids.put("RIPEMD256", TeleTrusTObjectIdentifiers.ripemd256);
 
         digestNameToOids.put("SM3", GMObjectIdentifiers.sm3);
+
+        // IETF RFC 3370
+        addDigestAlgId(OIWObjectIdentifiers.idSHA1, true);
+        // IETF RFC 5754
+        addDigestAlgId(NISTObjectIdentifiers.id_sha224, false);
+        addDigestAlgId(NISTObjectIdentifiers.id_sha256, false);
+        addDigestAlgId(NISTObjectIdentifiers.id_sha384, false);
+        addDigestAlgId(NISTObjectIdentifiers.id_sha512, false);
+        addDigestAlgId(NISTObjectIdentifiers.id_sha512_224, false);
+        addDigestAlgId(NISTObjectIdentifiers.id_sha512_256, false);
+
+        // NIST CSOR
+        addDigestAlgId(NISTObjectIdentifiers.id_sha3_224, false);
+        addDigestAlgId(NISTObjectIdentifiers.id_sha3_256, false);
+        addDigestAlgId(NISTObjectIdentifiers.id_sha3_384, false);
+        addDigestAlgId(NISTObjectIdentifiers.id_sha3_512, false);
+
+        // RFC 8702
+        addDigestAlgId(NISTObjectIdentifiers.id_shake128, false);
+        addDigestAlgId(NISTObjectIdentifiers.id_shake256, false);
+
+        // RFC 4357
+        addDigestAlgId(CryptoProObjectIdentifiers.gostR3411, true);
+
+        // draft-deremin-rfc4491
+        addDigestAlgId(RosstandartObjectIdentifiers.id_tc26_gost_3411_12_256, false);
+        addDigestAlgId(RosstandartObjectIdentifiers.id_tc26_gost_3411_12_512, false);
+
+        // IETF RFC 1319
+        addDigestAlgId(PKCSObjectIdentifiers.md2, true);
+        // IETF RFC 1320
+        addDigestAlgId(PKCSObjectIdentifiers.md4, true);
+        // IETF RFC 1321
+        addDigestAlgId(PKCSObjectIdentifiers.md5, true);
+
+        // found no standard which specified the handle of AlgorithmIdentifier.parameters,
+        // so let it as before.
+        addDigestAlgId(TeleTrusTObjectIdentifiers.ripemd128, true);
+        addDigestAlgId(TeleTrusTObjectIdentifiers.ripemd160, true);
+        addDigestAlgId(TeleTrusTObjectIdentifiers.ripemd256, true);
+    }
+
+    private static void addDigestAlgId(ASN1ObjectIdentifier oid, boolean withNullParams)
+    {
+        AlgorithmIdentifier algId;
+        if (withNullParams)
+        {
+            algId = new AlgorithmIdentifier(oid, DERNull.INSTANCE);
+        }
+        else
+        {
+            algId = new AlgorithmIdentifier(oid);
+        }
+        digestOidToAlgIds.put(oid, algId);
     }
 
     public AlgorithmIdentifier find(AlgorithmIdentifier sigAlgId)
     {
-        AlgorithmIdentifier digAlgId;
+        ASN1ObjectIdentifier sigAlgOid = sigAlgId.getAlgorithm();
 
-        if (sigAlgId.getAlgorithm().equals(PKCSObjectIdentifiers.id_RSASSA_PSS))
+        if (sigAlgOid.equals(EdECObjectIdentifiers.id_Ed448))
         {
-            digAlgId = RSASSAPSSparams.getInstance(sigAlgId.getParameters()).getHashAlgorithm();
+            return new AlgorithmIdentifier(NISTObjectIdentifiers.id_shake256_len, new ASN1Integer(512));
         }
-        else if (sigAlgId.getAlgorithm().equals(EdECObjectIdentifiers.id_Ed25519))
+
+        ASN1ObjectIdentifier digAlgOid;
+        if (sigAlgOid.equals(PKCSObjectIdentifiers.id_RSASSA_PSS))
         {
-            digAlgId = new AlgorithmIdentifier(NISTObjectIdentifiers.id_sha512);
+            digAlgOid = RSASSAPSSparams.getInstance(sigAlgId.getParameters()).getHashAlgorithm().getAlgorithm();
         }
-        else if (sigAlgId.getAlgorithm().equals(EdECObjectIdentifiers.id_Ed448))
+        else if (sigAlgOid.equals(EdECObjectIdentifiers.id_Ed25519))
         {
-            digAlgId = new AlgorithmIdentifier(NISTObjectIdentifiers.id_shake256_len, new ASN1Integer(512));
+            digAlgOid = NISTObjectIdentifiers.id_sha512;
+        }
+        else if (sigAlgOid.equals(PKCSObjectIdentifiers.id_alg_hss_lms_hashsig))
+        {
+            digAlgOid = NISTObjectIdentifiers.id_sha256;
         }
         else
         {
-            digAlgId = new AlgorithmIdentifier((ASN1ObjectIdentifier)digestOids.get(sigAlgId.getAlgorithm()), DERNull.INSTANCE);
+            digAlgOid = (ASN1ObjectIdentifier)digestOids.get(sigAlgId.getAlgorithm());
         }
 
-        return digAlgId;
+        return find(digAlgOid);
+    }
+
+    public AlgorithmIdentifier find(ASN1ObjectIdentifier digAlgOid)
+    {
+        if (digAlgOid == null)
+        {
+            throw new NullPointerException("digest OID is null");
+        }
+
+        AlgorithmIdentifier digAlgId = (AlgorithmIdentifier)digestOidToAlgIds.get(digAlgOid);
+        if (digAlgId == null)
+        {
+            return new AlgorithmIdentifier(digAlgOid);
+        }
+        else
+        {
+            return digAlgId;
+        }
     }
 
     public AlgorithmIdentifier find(String digAlgName)
     {
-        return new AlgorithmIdentifier((ASN1ObjectIdentifier)digestNameToOids.get(digAlgName), DERNull.INSTANCE);
+        ASN1ObjectIdentifier oid = (ASN1ObjectIdentifier)digestNameToOids.get(digAlgName);
+        if (oid != null)
+        {
+            return find(oid);
+        }
+        try
+        {
+            return find(new ASN1ObjectIdentifier(digAlgName));
+        }
+        catch (IllegalArgumentException e)
+        {
+            // ignore - tried it but it didn't work...
+        }
+
+        return null;
     }
 }

@@ -1,11 +1,15 @@
 
 package org.bouncycastle.asn1.x509;
 
+import org.bouncycastle.asn1.ASN1BMPString;
 import org.bouncycastle.asn1.ASN1Choice;
+import org.bouncycastle.asn1.ASN1IA5String;
 import org.bouncycastle.asn1.ASN1Object;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1String;
 import org.bouncycastle.asn1.ASN1TaggedObject;
+import org.bouncycastle.asn1.ASN1UTF8String;
+import org.bouncycastle.asn1.ASN1VisibleString;
 import org.bouncycastle.asn1.DERBMPString;
 import org.bouncycastle.asn1.DERIA5String;
 import org.bouncycastle.asn1.DERUTF8String;
@@ -125,19 +129,19 @@ public class DisplayText
    private DisplayText(ASN1String de)
    {
       contents = de;
-      if (de instanceof DERUTF8String)
+      if (de instanceof ASN1UTF8String)
       {
          contentType = CONTENT_TYPE_UTF8STRING;
       }
-      else if (de instanceof DERBMPString)
+      else if (de instanceof ASN1BMPString)
       {
          contentType = CONTENT_TYPE_BMPSTRING;
       }
-      else if (de instanceof DERIA5String)
+      else if (de instanceof ASN1IA5String)
       {
          contentType = CONTENT_TYPE_IA5STRING;
       }
-      else if (de instanceof DERVisibleString)
+      else if (de instanceof ASN1VisibleString)
       {
          contentType = CONTENT_TYPE_VISIBLESTRING;
       }

@@ -7,10 +7,8 @@ import org.bouncycastle.crypto.engines.RSAEngine;
 import org.bouncycastle.crypto.params.RSAKeyParameters;
 import org.bouncycastle.crypto.signers.PSSSigner;
 import org.bouncycastle.tls.DigitallySigned;
-import org.bouncycastle.tls.HashAlgorithm;
-import org.bouncycastle.tls.SignatureAlgorithm;
 import org.bouncycastle.tls.SignatureAndHashAlgorithm;
-import org.bouncycastle.tls.crypto.TlsStreamVerifier;
+import org.bouncycastle.tls.SignatureScheme;
 
 /**
  * Operator supporting the verification of RSASSA-PSS signatures using the BC light-weight API.
@@ -18,41 +16,35 @@ import org.bouncycastle.tls.crypto.TlsStreamVerifier;
 public class BcTlsRSAPSSVerifier
     extends BcTlsVerifier
 {
-    private final short signatureAlgorithm;
+    private final int signatureScheme;
 
-    public BcTlsRSAPSSVerifier(BcTlsCrypto crypto, RSAKeyParameters publicKey, short signatureAlgorithm)
-   {
+    public BcTlsRSAPSSVerifier(BcTlsCrypto crypto, RSAKeyParameters publicKey, int signatureScheme)
+    {
         super(crypto, publicKey);
 
-        if (!SignatureAlgorithm.isRSAPSS(signatureAlgorithm))
+        if (!SignatureScheme.isRSAPSS(signatureScheme))
         {
-            throw new IllegalArgumentException("signatureAlgorithm");
+            throw new IllegalArgumentException("signatureScheme");
         }
 
-        this.signatureAlgorithm = signatureAlgorithm;
+        this.signatureScheme = signatureScheme;
     }
 
-    public boolean verifyRawSignature(DigitallySigned signature, byte[] hash) throws IOException
+    public boolean verifyRawSignature(DigitallySigned digitallySigned, byte[] hash) throws IOException
     {
-        throw new UnsupportedOperationException();
-    }
-
-    public TlsStreamVerifier getStreamVerifier(DigitallySigned signature)
-    {
-        SignatureAndHashAlgorithm algorithm = signature.getAlgorithm();
-        if (algorithm == null
-            || algorithm.getSignature() != signatureAlgorithm
-            || algorithm.getHash() != HashAlgorithm.Intrinsic)
+        SignatureAndHashAlgorithm algorithm = digitallySigned.getAlgorithm();
+        if (algorithm == null || SignatureScheme.from(algorithm) != signatureScheme)
         {
             throw new IllegalStateException("Invalid algorithm: " + algorithm);
         }
 
-        short hash = SignatureAlgorithm.getRSAPSSHashAlgorithm(signatureAlgorithm);
-        Digest digest = crypto.createDigest(hash);
+        int cryptoHashAlgorithm = SignatureScheme.getCryptoHashAlgorithm(signatureScheme);
+        Digest digest = crypto.createDigest(cryptoHashAlgorithm);
 
-        PSSSigner verifier = new PSSSigner(new RSAEngine(), digest, digest.getDigestSize());
+        PSSSigner verifier = PSSSigner.createRawSigner(new RSAEngine(), digest, digest, digest.getDigestSize(),
+            PSSSigner.TRAILER_IMPLICIT);
         verifier.init(false, publicKey);
-
-        return new BcTlsStreamVerifier(verifier, signature.getSignature());
+        verifier.update(hash, 0, hash.length);
+        return verifier.verifySignature(digitallySigned.getSignature());
     }
 }

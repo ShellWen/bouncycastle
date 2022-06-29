@@ -1,13 +1,17 @@
 package org.bouncycastle.jsse.provider;
 
 import java.io.IOException;
+import java.math.BigInteger;
 import java.security.Principal;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Hashtable;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.Vector;
 import java.util.logging.Level;
@@ -31,15 +35,15 @@ import org.bouncycastle.tls.ProtocolVersion;
 import org.bouncycastle.tls.SecurityParameters;
 import org.bouncycastle.tls.ServerName;
 import org.bouncycastle.tls.SessionParameters;
-import org.bouncycastle.tls.SignatureAlgorithm;
 import org.bouncycastle.tls.SignatureAndHashAlgorithm;
 import org.bouncycastle.tls.TlsCredentials;
+import org.bouncycastle.tls.TlsDHUtils;
 import org.bouncycastle.tls.TlsExtensionsUtils;
 import org.bouncycastle.tls.TlsFatalAlert;
 import org.bouncycastle.tls.TlsSession;
 import org.bouncycastle.tls.TlsUtils;
 import org.bouncycastle.tls.TrustedAuthority;
-import org.bouncycastle.tls.crypto.TlsCertificate;
+import org.bouncycastle.tls.crypto.DHGroup;
 import org.bouncycastle.tls.crypto.impl.jcajce.JcaTlsCrypto;
 import org.bouncycastle.util.Arrays;
 import org.bouncycastle.util.encoders.Hex;
@@ -50,12 +54,23 @@ class ProvTlsServer
 {
     private static final Logger LOG = Logger.getLogger(ProvTlsServer.class.getName());
 
+    private static final String PROPERTY_DEFAULT_DHE_PARAMETERS = "jdk.tls.server.defaultDHEParameters";
+
     // TODO[jsse] Integrate this into NamedGroupInfo
     private static final int provEphemeralDHKeySize = PropertyUtils.getIntegerSystemProperty("jdk.tls.ephemeralDHKeySize", 2048, 1024, 8192);
 
-    // TODO[resumption] Enable by default in due course
+    /*
+     * TODO[jsse] Does this selection override the restriction from 'jdk.tls.ephemeralDHKeySize'?
+     * TODO[fips] Probably should be ignored in fips mode?
+     */
+    @SuppressWarnings("unused")
+    private static final DHGroup[] provServerDefaultDHEParameters = getDefaultDHEParameters();
+
+    private static final boolean provServerEnableCA = PropertyUtils
+        .getBooleanSystemProperty("jdk.tls.server.enableCAExtension", true);
+
     private static final boolean provServerEnableSessionResumption = PropertyUtils
-        .getBooleanSystemProperty("org.bouncycastle.jsse.server.enableSessionResumption", false);
+        .getBooleanSystemProperty("org.bouncycastle.jsse.server.enableSessionResumption", true);
 
     // TODO[jsse] Support status_request and status_request_v2 extensions
 //    private static final boolean provServerEnableStatusRequest = PropertyUtils.getBooleanSystemProperty(
@@ -64,6 +79,90 @@ class ProvTlsServer
 
     private static final boolean provServerEnableTrustedCAKeys = PropertyUtils
         .getBooleanSystemProperty("org.bouncycastle.jsse.server.enableTrustedCAKeysExtension", false);
+
+    private static DHGroup[] getDefaultDHEParameters()
+    {
+        String propertyValue = PropertyUtils.getStringSecurityProperty(PROPERTY_DEFAULT_DHE_PARAMETERS);
+        if (null == propertyValue)
+        {
+            return null;
+        }
+
+        String input = JsseUtils.stripDoubleQuotes(JsseUtils.removeAllWhitespace(propertyValue));
+        int limit = input.length();
+        if (limit < 1)
+        {
+            return null;
+        }
+
+        ArrayList<DHGroup> result = new ArrayList<DHGroup>();
+        int outerComma = -1;
+        do
+        {
+            int openBrace = outerComma + 1;
+            if (openBrace >= limit || '{' != input.charAt(openBrace))
+            {
+                break;
+            }
+
+            int modulus = openBrace + 1;
+
+            int innerComma = input.indexOf(',', modulus);
+            if (innerComma <= modulus)
+            {
+                break;
+            }
+
+            int generator = innerComma + 1;
+
+            int closeBrace = input.indexOf('}', generator);
+            if (closeBrace <= generator)
+            {
+                break;
+            }
+
+            try
+            {
+                BigInteger p = parseDHParameter(input, modulus, innerComma);
+                BigInteger g = parseDHParameter(input, generator, closeBrace);
+
+                DHGroup dhGroup = TlsDHUtils.getStandardGroupForDHParameters(p, g);
+                if (null != dhGroup)
+                {
+                    result.add(dhGroup);
+                }
+                else if (!p.isProbablePrime(120))
+                {
+                    LOG.log(Level.WARNING, "Non-prime modulus ignored in security property ["
+                        + PROPERTY_DEFAULT_DHE_PARAMETERS + "]: " + p.toString(16));
+                }
+                else
+                {
+                    result.add(new DHGroup(p, null, g, 0));
+                }
+            }
+            catch (Exception e)
+            {
+                break;
+            }
+
+            outerComma = closeBrace + 1;
+            if (outerComma >= limit)
+            {
+                return result.toArray(new DHGroup[result.size()]);
+            }
+        }
+        while (',' == input.charAt(outerComma));
+
+        LOG.log(Level.WARNING, "Invalid syntax for security property [" + PROPERTY_DEFAULT_DHE_PARAMETERS + "]");
+
+        return null;
+    }
+
+    private static BigInteger parseDHParameter(String s, int beginIndex, int endIndex)
+    {
+        return new BigInteger(s.substring(beginIndex, endIndex), 16);
+    }
 
     protected final ProvTlsManager manager;
     protected final ProvSSLParameters sslParameters;
@@ -143,13 +242,19 @@ class ProvTlsServer
     @Override
     protected boolean selectCipherSuite(int cipherSuite) throws IOException
     {
-        TlsCredentials cipherSuiteCredentials = selectCredentials(jsseSecurityParameters.trustedIssuers, cipherSuite);
+        TlsCredentials cipherSuiteCredentials = null;
 
-        if (null == cipherSuiteCredentials)
+        int keyExchangeAlgorithm = TlsUtils.getKeyExchangeAlgorithm(cipherSuite);
+        if (!KeyExchangeAlgorithm.isAnonymous(keyExchangeAlgorithm))
         {
-            String cipherSuiteName = ProvSSLContextSpi.getCipherSuiteName(cipherSuite);
-            LOG.finer("Server found no credentials for cipher suite: " + cipherSuiteName);
-            return false;
+            cipherSuiteCredentials = selectCredentials(jsseSecurityParameters.trustedIssuers, keyExchangeAlgorithm);
+
+            if (null == cipherSuiteCredentials)
+            {
+                String cipherSuiteName = ProvSSLContextSpi.getCipherSuiteName(cipherSuite);
+                LOG.finer("Server found no credentials for cipher suite: " + cipherSuiteName);
+                return false;
+            }
         }
 
         boolean result = super.selectCipherSuite(cipherSuite);
@@ -227,6 +332,18 @@ class ProvTlsServer
         return JsseUtils.allowLegacyResumption();
     }
 
+    @Override
+    public int getMaxCertificateChainLength()
+    {
+        return JsseUtils.getMaxCertificateChainLength();
+    }
+
+    @Override
+    public int getMaxHandshakeMessageSize()
+    {
+        return JsseUtils.getMaxHandshakeMessageSize();
+    }
+
     public synchronized boolean isHandshakeComplete()
     {
         return handshakeComplete;
@@ -236,6 +353,11 @@ class ProvTlsServer
     public TlsCredentials getCredentials()
         throws IOException
     {
+        if (credentials == null)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
+
         return credentials;
     }
 
@@ -261,12 +383,11 @@ class ProvTlsServer
         Vector<SignatureAndHashAlgorithm> serverSigAlgs = SignatureSchemeInfo
             .getSignatureAndHashAlgorithms(jsseSecurityParameters.localSigSchemes);
 
-        /*
-         * TODO[tls13] It appears SunJSSE will add a system property for this (default enabled?),
-         * perhaps "jdk.tls[.client/server].enableCAExtension" or similar.
-         */
-        Vector<X500Name> certificateAuthorities = JsseUtils
-            .getCertificateAuthorities(contextData.getX509TrustManager());
+        Vector<X500Name> certificateAuthorities = null;
+        if (provServerEnableCA)
+        {
+            certificateAuthorities = JsseUtils.getCertificateAuthorities(contextData.getX509TrustManager());
+        }
 
         if (TlsUtils.isTLSv13(negotiatedVersion))
         {
@@ -404,6 +525,18 @@ class ProvTlsServer
             jsseSecurityParameters.peerSigSchemesCert = (clientSigAlgs == clientSigAlgsCert)
                 ?   jsseSecurityParameters.peerSigSchemes
                 :   contextData.getSignatureSchemes(clientSigAlgsCert);
+
+            if (LOG.isLoggable(Level.FINEST))
+            {
+                LOG.finest(JsseUtils.getSignatureAlgorithmsReport("Peer signature_algorithms",
+                    jsseSecurityParameters.peerSigSchemes));
+
+                if (jsseSecurityParameters.peerSigSchemesCert != jsseSecurityParameters.peerSigSchemes)
+                {
+                    LOG.finest(JsseUtils.getSignatureAlgorithmsReport("Peer signature_algorithms_cert",
+                        jsseSecurityParameters.peerSigSchemesCert));
+                }
+            }
         }
 
         if (DummyX509KeyManager.INSTANCE == contextData.getX509KeyManager())
@@ -467,11 +600,7 @@ class ProvTlsServer
             }
         }
 
-        if (!manager.getEnableSessionCreation())
-        {
-            throw new IllegalStateException("Cannot resume session and session creation is disabled");
-        }
-
+        JsseUtils.checkSessionCreationEnabled(manager);
         return null;
     }
 
@@ -495,25 +624,24 @@ class ProvTlsServer
         boolean isResumed = (null != sslSession && sslSession.getTlsSession() == session);
         if (isResumed)
         {
+            // -DM Hex.toHexString
             LOG.fine("Server resumed session: " + Hex.toHexString(sessionID));
         }
         else
         {
             this.sslSession = null;
 
-            if (sessionID == null || sessionID.length < 1)
+            if (TlsUtils.isNullOrEmpty(sessionID))
             {
                 LOG.fine("Server did not specify a session ID");
             }
             else
             {
+                // -DM Hex.toHexString
                 LOG.fine("Server specified new session: " + Hex.toHexString(sessionID));
             }
 
-            if (!manager.getEnableSessionCreation())
-            {
-                throw new IllegalStateException("Cannot resume session and session creation is disabled");
-            }
+            JsseUtils.checkSessionCreationEnabled(manager);
         }
 
         manager.notifyHandshakeSession(manager.getContextData().getServerSessionContext(),
@@ -592,35 +720,13 @@ class ProvTlsServer
         {
             X509Certificate[] chain = JsseUtils.getX509CertificateChain(getCrypto(), clientCertificate);
 
-            TlsCertificate ee = clientCertificate.getCertificateAt(0);
-
             /*
-             * TODO[jsse] Need a less kludgy approach here, or maybe we only need a dummy value for
-             * 'authType' anyway?
+             * We never try to continue the handshake with an untrusted client certificate (although it could
+             * be an option if we only "want" client-auth, rather than "need".
+             * 
+             * NOTE: The 'authType' parameter is a dummy value not used by trust managers.
              */
-            short signatureAlgorithm;
-            if (ee.supportsSignatureAlgorithm(SignatureAlgorithm.ed25519))
-            {
-                signatureAlgorithm = SignatureAlgorithm.ed25519;
-            }
-            else if (ee.supportsSignatureAlgorithm(SignatureAlgorithm.ed448))
-            {
-                signatureAlgorithm = SignatureAlgorithm.ed448;
-            }
-            else
-            {
-                signatureAlgorithm = ee.getLegacySignatureAlgorithm();
-            }
-
-            if (signatureAlgorithm < 0)
-            {
-                throw new TlsFatalAlert(AlertDescription.unsupported_certificate);
-            }
-
-            String authType = JsseUtils.getAuthTypeClient(signatureAlgorithm);
-
-            // NOTE: We never try to continue the handshake with an untrusted client certificate
-            manager.checkClientTrusted(chain, authType);
+            manager.checkClientTrusted(chain, "TLS-client-auth");
         }
     }
 
@@ -641,7 +747,7 @@ class ProvTlsServer
             JsseSessionParameters jsseSessionParameters = new JsseSessionParameters(null, matchedSNIServerName);
             // TODO[tls13] Resumption/PSK
             boolean addToCache = provServerEnableSessionResumption && !TlsUtils.isTLSv13(context)
-                && context.getSecurityParametersHandshake().isExtendedMasterSecret();
+                && context.getSecurityParametersConnection().isExtendedMasterSecret();
 
             this.sslSession = sslSessionContext.reportSession(peerHost, peerPort, connectionTlsSession,
                 jsseSessionParameters, addToCache);
@@ -696,12 +802,23 @@ class ProvTlsServer
             }
         }
 
-        if (provServerEnableTrustedCAKeys)
+        if (TlsUtils.isTLSv13(context))
         {
             @SuppressWarnings("unchecked")
-            Vector<TrustedAuthority> trustedCAKeys = this.trustedCAKeys;
+            Vector<X500Name> certificateAuthorities = TlsExtensionsUtils
+                .getCertificateAuthoritiesExtension(clientExtensions);
 
-            jsseSecurityParameters.trustedIssuers = JsseUtils.getTrustedIssuers(trustedCAKeys);
+            jsseSecurityParameters.trustedIssuers = JsseUtils.toX500Principals(certificateAuthorities);
+        }
+        else
+        {
+            if (provServerEnableTrustedCAKeys)
+            {
+                @SuppressWarnings("unchecked")
+                Vector<TrustedAuthority> trustedCAKeys = this.trustedCAKeys;
+
+                jsseSecurityParameters.trustedIssuers = JsseUtils.getTrustedIssuers(trustedCAKeys);
+            }
         }
     }
 
@@ -738,11 +855,17 @@ class ProvTlsServer
         {
             SecurityParameters securityParameters = context.getSecurityParametersHandshake();
 
+            ProtocolVersion negotiatedVersion = securityParameters.getNegotiatedVersion();
+            if (TlsUtils.isTLSv13(negotiatedVersion))
+            {
+                return false;
+            }
+
             // TODO[resumption] Avoid the copy somehow?
             SessionParameters sessionParameters = tlsSession.exportSessionParameters();
 
             if (null == sessionParameters ||
-                !securityParameters.getNegotiatedVersion().equals(sessionParameters.getNegotiatedVersion()) ||
+                !negotiatedVersion.equals(sessionParameters.getNegotiatedVersion()) ||
                 !Arrays.contains(getCipherSuites(), sessionParameters.getCipherSuite()) ||
                 !Arrays.contains(offeredCipherSuites, sessionParameters.getCipherSuite()))
             {
@@ -751,12 +874,6 @@ class ProvTlsServer
 
             // TODO[resumption] Consider support for related system properties
             if (!sessionParameters.isExtendedMasterSecret())
-            {
-                return false;
-            }
-
-            // TODO[tls13] Resumption/PSK 
-            if (TlsUtils.isTLSv13(sessionParameters.getNegotiatedVersion()))
             {
                 return false;
             }
@@ -791,9 +908,8 @@ class ProvTlsServer
         return true;
     }
 
-    protected TlsCredentials selectCredentials(Principal[] issuers, int cipherSuite) throws IOException
+    protected TlsCredentials selectCredentials(Principal[] issuers, int keyExchangeAlgorithm) throws IOException
     {
-        int keyExchangeAlgorithm = TlsUtils.getKeyExchangeAlgorithm(cipherSuite);
         switch (keyExchangeAlgorithm)
         {
         case KeyExchangeAlgorithm.DHE_DSS:
@@ -826,11 +942,10 @@ class ProvTlsServer
     protected TlsCredentials selectServerCredentials12(Principal[] issuers, int keyExchangeAlgorithm) throws IOException
     {
         BCAlgorithmConstraints algorithmConstraints = sslParameters.getAlgorithmConstraints();
-        boolean post13Active = TlsUtils.isTLSv13(context);
-        boolean pre13Active = !post13Active;
 
         final short legacySignatureAlgorithm = TlsUtils.getLegacySignatureAlgorithmServer(keyExchangeAlgorithm);
 
+        LinkedHashMap<String, SignatureSchemeInfo> keyTypeMap = new LinkedHashMap<String, SignatureSchemeInfo>();
         for (SignatureSchemeInfo signatureSchemeInfo : jsseSecurityParameters.peerSigSchemes)
         {
             if (!TlsUtils.isValidSignatureSchemeForServerKeyExchange(signatureSchemeInfo.getSignatureScheme(),
@@ -843,48 +958,60 @@ class ProvTlsServer
 
             String keyType = (legacySignatureAlgorithm == signatureAlgorithm)
                 ?   JsseUtils.getKeyTypeLegacyServer(keyExchangeAlgorithm)
-                :   JsseUtils.getKeyType(signatureSchemeInfo);
+                :   signatureSchemeInfo.getKeyType();
 
             if (keyManagerMissCache.contains(keyType))
             {
                 continue;
             }
-
-            // TODO[tls13] Somewhat redundant if we get all active signature schemes later (for CertificateRequest)
-            if (!signatureSchemeInfo.isActive(algorithmConstraints, pre13Active, post13Active,
-                jsseSecurityParameters.namedGroups))
+            if (keyTypeMap.containsKey(keyType))
             {
                 continue;
             }
 
-            BCX509Key x509Key = manager.chooseServerKey(keyType, issuers);
-            if (null == x509Key
-                || !JsseUtils.isUsableKeyForServer(signatureAlgorithm, x509Key.getPrivateKey()))
+            // TODO[jsse] Somewhat redundant if we get all active signature schemes later (for CertificateRequest)
+            if (!signatureSchemeInfo.isActive(algorithmConstraints, false, true, jsseSecurityParameters.namedGroups))
             {
-                if (LOG.isLoggable(Level.FINER))
-                {
-                    LOG.finer("Server (1.2) found no credentials for signature scheme '" + signatureSchemeInfo
-                        + "' (keyType '" + keyType + "')");
-                }
-
-                keyManagerMissCache.add(keyType);
                 continue;
             }
 
-            if (LOG.isLoggable(Level.FINE))
-            {
-                LOG.fine("Server (1.2) selected credentials for signature scheme '" + signatureSchemeInfo
-                    + "' (keyType '" + keyType + "'), with private key algorithm '"
-                    + JsseUtils.getPrivateKeyAlgorithm(x509Key.getPrivateKey()) + "'");
-            }
-
-            return JsseUtils.createCredentialedSigner(context, getCrypto(), x509Key,
-                signatureSchemeInfo.getSignatureAndHashAlgorithm());
+            keyTypeMap.put(keyType, signatureSchemeInfo);
         }
 
-        LOG.fine("Server (1.2) did not select any credentials");
+        if (keyTypeMap.isEmpty())
+        {
+            LOG.fine("Server (1.2) has no key types to try for KeyExchangeAlgorithm " + keyExchangeAlgorithm);
+            return null;
+        }
 
-        return null;
+        String[] keyTypes = keyTypeMap.keySet().toArray(TlsUtils.EMPTY_STRINGS);
+        BCX509Key x509Key = manager.chooseServerKey(keyTypes, issuers);
+
+        if (null == x509Key)
+        {
+            handleKeyManagerMisses(keyTypeMap, null);
+            LOG.fine("Server (1.2) did not select any credentials for KeyExchangeAlgorithm " + keyExchangeAlgorithm);
+            return null;
+        }
+
+        String selectedKeyType = x509Key.getKeyType();
+        handleKeyManagerMisses(keyTypeMap, selectedKeyType);
+
+        SignatureSchemeInfo selectedSignatureSchemeInfo = keyTypeMap.get(selectedKeyType);
+        if (null == selectedSignatureSchemeInfo)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error, "Key manager returned invalid key type");
+        }
+
+        if (LOG.isLoggable(Level.FINE))
+        {
+            LOG.fine("Server (1.2) selected credentials for signature scheme '" + selectedSignatureSchemeInfo
+                + "' (keyType '" + selectedKeyType + "'), with private key algorithm '"
+                + JsseUtils.getPrivateKeyAlgorithm(x509Key.getPrivateKey()) + "'");
+        }
+
+        return JsseUtils.createCredentialedSigner(context, getCrypto(), x509Key,
+            selectedSignatureSchemeInfo.getSignatureAndHashAlgorithm());
     }
 
     protected TlsCredentials selectServerCredentials13(Principal[] issuers, byte[] certificateRequestContext)
@@ -892,48 +1019,62 @@ class ProvTlsServer
     {
         BCAlgorithmConstraints algorithmConstraints = sslParameters.getAlgorithmConstraints();
 
+        LinkedHashMap<String, SignatureSchemeInfo> keyTypeMap = new LinkedHashMap<String, SignatureSchemeInfo>();
         for (SignatureSchemeInfo signatureSchemeInfo : jsseSecurityParameters.peerSigSchemes)
         {
-            String keyType = JsseUtils.getKeyType(signatureSchemeInfo);
+            String keyType = signatureSchemeInfo.getKeyType13();
             if (keyManagerMissCache.contains(keyType))
             {
                 continue;
             }
-
-            // TODO[tls13] Somewhat redundant if we get all active signature schemes later (for CertificateRequest)
-            if (!signatureSchemeInfo.isActive(algorithmConstraints, false, true, jsseSecurityParameters.namedGroups))
+            if (keyTypeMap.containsKey(keyType))
             {
                 continue;
             }
 
-            BCX509Key x509Key = manager.chooseServerKey(keyType, issuers);
-            if (null == x509Key ||
-                !JsseUtils.isUsableKeyForServer(signatureSchemeInfo.getSignatureAlgorithm(), x509Key.getPrivateKey()))
+            // TODO[jsse] Somewhat redundant if we get all active signature schemes later (for CertificateRequest)
+            if (!signatureSchemeInfo.isActive(algorithmConstraints, true, false, jsseSecurityParameters.namedGroups))
             {
-                if (LOG.isLoggable(Level.FINER))
-                {
-                    LOG.finer("Server (1.3) found no credentials for signature scheme '" + signatureSchemeInfo
-                        + "' (keyType '" + keyType + "')");
-                }
-
-                keyManagerMissCache.add(keyType);
                 continue;
             }
 
-            if (LOG.isLoggable(Level.FINE))
-            {
-                LOG.fine("Server (1.3) selected credentials for signature scheme '" + signatureSchemeInfo
-                    + "' (keyType '" + keyType + "'), with private key algorithm '"
-                    + JsseUtils.getPrivateKeyAlgorithm(x509Key.getPrivateKey()) + "'");
-            }
-
-            return JsseUtils.createCredentialedSigner13(context, getCrypto(), x509Key,
-                signatureSchemeInfo.getSignatureAndHashAlgorithm(), certificateRequestContext);
+            keyTypeMap.put(keyType, signatureSchemeInfo);
         }
 
-        LOG.fine("Server (1.3) did not select any credentials");
+        if (keyTypeMap.isEmpty())
+        {
+            LOG.fine("Server (1.3) found no usable signature schemes");
+            return null;
+        }
 
-        return null;
+        String[] keyTypes = keyTypeMap.keySet().toArray(TlsUtils.EMPTY_STRINGS);
+        BCX509Key x509Key = manager.chooseServerKey(keyTypes, issuers);
+
+        if (null == x509Key)
+        {
+            handleKeyManagerMisses(keyTypeMap, null);
+            LOG.fine("Server (1.3) did not select any credentials");
+            return null;
+        }
+
+        String selectedKeyType = x509Key.getKeyType();
+        handleKeyManagerMisses(keyTypeMap, selectedKeyType);
+
+        SignatureSchemeInfo selectedSignatureSchemeInfo = keyTypeMap.get(selectedKeyType);
+        if (null == selectedSignatureSchemeInfo)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error, "Key manager returned invalid key type");
+        }
+
+        if (LOG.isLoggable(Level.FINE))
+        {
+            LOG.fine("Server (1.3) selected credentials for signature scheme '" + selectedSignatureSchemeInfo
+                + "' (keyType '" + selectedKeyType + "'), with private key algorithm '"
+                + JsseUtils.getPrivateKeyAlgorithm(x509Key.getPrivateKey()) + "'");
+        }
+
+        return JsseUtils.createCredentialedSigner13(context, getCrypto(), x509Key,
+            selectedSignatureSchemeInfo.getSignatureAndHashAlgorithm(), certificateRequestContext);
     }
 
     protected TlsCredentials selectServerCredentialsLegacy(Principal[] issuers, int keyExchangeAlgorithm)
@@ -945,9 +1086,8 @@ class ProvTlsServer
             return null;
         }
 
-        BCX509Key x509Key = manager.chooseServerKey(keyType, issuers);
-        if (null == x509Key
-            || !JsseUtils.isUsableKeyForServerLegacy(keyExchangeAlgorithm, x509Key.getPrivateKey()))
+        BCX509Key x509Key = manager.chooseServerKey(new String[]{ keyType }, issuers);
+        if (null == x509Key)
         {
             keyManagerMissCache.add(keyType);
             return null;
@@ -959,5 +1099,27 @@ class ProvTlsServer
         }
 
         return JsseUtils.createCredentialedSigner(context, getCrypto(), x509Key, null);
+    }
+
+    private void handleKeyManagerMisses(LinkedHashMap<String, SignatureSchemeInfo> keyTypeMap, String selectedKeyType)
+    {
+        for (Map.Entry<String, SignatureSchemeInfo> entry : keyTypeMap.entrySet())
+        {
+            String keyType = entry.getKey();
+            if (keyType.equals(selectedKeyType))
+            {
+                break;
+            }
+
+            keyManagerMissCache.add(keyType);
+
+            if (LOG.isLoggable(Level.FINER))
+            {
+                SignatureSchemeInfo signatureSchemeInfo = entry.getValue();
+
+                LOG.finer("Server found no credentials for signature scheme '" + signatureSchemeInfo
+                    + "' (keyType '" + keyType + "')");
+            }
+        }
     }
 }

@@ -8,9 +8,11 @@ import org.bouncycastle.asn1.ASN1Boolean;
 import org.bouncycastle.asn1.ASN1Enumerated;
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1Integer;
+import org.bouncycastle.asn1.ASN1ObjectDescriptor;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OutputStream;
 import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.ASN1RelativeOID;
 import org.bouncycastle.asn1.BEROctetString;
 import org.bouncycastle.asn1.BERSequence;
 import org.bouncycastle.asn1.BERSet;
@@ -66,6 +68,8 @@ public class EqualsAndHashCodeTest
                 DERNull.INSTANCE,
                 new DERNumericString("123456"),
                 new ASN1ObjectIdentifier("1.1.1.10000.1"),
+                new ASN1RelativeOID("3.2.0.123456"),
+                new ASN1ObjectDescriptor(new DERGraphicString(Hex.decode("feedface"))),
                 new DEROctetString(data),
                 new DERPrintableString("hello world"),
                 new DERSequence(new DERPrintableString("hello world")),

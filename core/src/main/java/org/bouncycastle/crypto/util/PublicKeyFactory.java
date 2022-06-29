@@ -6,13 +6,13 @@ import java.math.BigInteger;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.bouncycastle.asn1.ASN1BitString;
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
-import org.bouncycastle.asn1.DERBitString;
 import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.cryptopro.CryptoProObjectIdentifiers;
 import org.bouncycastle.asn1.cryptopro.ECGOST3410NamedCurves;
@@ -292,7 +292,7 @@ public class PublicKeyFactory
                 dParams = new ECDomainParameters(x9);
             }
 
-            DERBitString bits = keyInfo.getPublicKeyData();
+            ASN1BitString bits = keyInfo.getPublicKeyData();
             byte[] data = bits.getBytes();
             ASN1OctetString key = new DEROctetString(data);
 
@@ -500,7 +500,7 @@ public class PublicKeyFactory
     {
         AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
         {
-            return new X25519PublicKeyParameters(getRawKey(keyInfo, defaultParams, X25519PublicKeyParameters.KEY_SIZE), 0);
+            return new X25519PublicKeyParameters(getRawKey(keyInfo, defaultParams));
         }
     }
 
@@ -509,7 +509,7 @@ public class PublicKeyFactory
     {
         AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
         {
-            return new X448PublicKeyParameters(getRawKey(keyInfo, defaultParams, X448PublicKeyParameters.KEY_SIZE), 0);
+            return new X448PublicKeyParameters(getRawKey(keyInfo, defaultParams));
         }
     }
 
@@ -518,7 +518,7 @@ public class PublicKeyFactory
     {
         AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
         {
-            return new Ed25519PublicKeyParameters(getRawKey(keyInfo, defaultParams, Ed25519PublicKeyParameters.KEY_SIZE), 0);
+            return new Ed25519PublicKeyParameters(getRawKey(keyInfo, defaultParams));
         }
     }
 
@@ -527,22 +527,17 @@ public class PublicKeyFactory
     {
         AsymmetricKeyParameter getPublicKeyParameters(SubjectPublicKeyInfo keyInfo, Object defaultParams)
         {
-            return new Ed448PublicKeyParameters(getRawKey(keyInfo, defaultParams, Ed448PublicKeyParameters.KEY_SIZE), 0);
+            return new Ed448PublicKeyParameters(getRawKey(keyInfo, defaultParams));
         }
     }
 
-    private static byte[] getRawKey(SubjectPublicKeyInfo keyInfo, Object defaultParams, int expectedSize)
+    private static byte[] getRawKey(SubjectPublicKeyInfo keyInfo, Object defaultParams)
     {
         /*
          * TODO[RFC 8422]
          * - Require defaultParams == null?
          * - Require keyInfo.getAlgorithm().getParameters() == null?
          */
-        byte[] result = keyInfo.getPublicKeyData().getOctets();
-        if (expectedSize != result.length)
-        {
-            throw new RuntimeException("public key encoding has incorrect length");
-        }
-        return result;
+        return keyInfo.getPublicKeyData().getOctets();
     }
 }

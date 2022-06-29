@@ -211,6 +211,11 @@ public abstract class AbstractTlsClient
         return null;
     }
 
+    public Vector getExternalPSKs()
+    {
+        return null;
+    }
+
     public boolean isFallback()
     {
         /*
@@ -364,11 +369,19 @@ public abstract class AbstractTlsClient
     {
     }
 
+    public void notifySessionToResume(TlsSession session)
+    {
+    }
+
     public void notifySessionID(byte[] sessionID)
     {
     }
 
     public void notifySelectedCipherSuite(int selectedCipherSuite)
+    {
+    }
+
+    public void notifySelectedPSK(TlsPSK selectedPSK) throws IOException
     {
     }
 
@@ -399,7 +412,7 @@ public abstract class AbstractTlsClient
 
             checkForUnexpectedServerExtension(serverExtensions, TlsExtensionsUtils.EXT_supported_groups);
 
-            int selectedCipherSuite = context.getSecurityParametersHandshake().getCipherSuite();
+            int selectedCipherSuite = securityParameters.getCipherSuite();
 
             if (TlsECCUtils.isECCCipherSuite(selectedCipherSuite))
             {

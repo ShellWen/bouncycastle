@@ -22,6 +22,16 @@ public interface TlsClient
      */
     TlsSession getSessionToResume();
 
+    /**
+     * Return the {@link TlsPSKExternal external PSKs} to offer in the ClientHello.
+     * Note that this will only be called when TLS 1.3 or higher is amongst the
+     * offered protocol versions.
+     * 
+     * @return a {@link Vector} of {@link TlsPSKExternal} instances, or null if none
+     *         should be offered.
+     */
+    Vector getExternalPSKs();
+
     boolean isFallback();
 
     // Hashtable is (Integer -> byte[])
@@ -35,12 +45,24 @@ public interface TlsClient
      * will then add a suitable key_share extension to the ClientHello extensions. 
      * 
      * @return a {@link Vector} of {@link NamedGroup named group} values, possibly empty or null. 
-     * @throws IOException
      */
     Vector getEarlyKeyShareGroups();
 
     void notifyServerVersion(ProtocolVersion selectedVersion)
         throws IOException;
+
+    /**
+     * Notifies the client of the session that will be offered in ClientHello for resumption, if any.
+     * This will be either the session returned from {@link #getSessionToResume()} or null if that
+     * session was unusable.
+     * 
+     * NOTE: the actual negotiated session_id is notified by {@link #notifySessionID(byte[])}.
+     *
+     * @param session The {@link TlsSession} representing the resumable session to
+     *                be offered for this connection, or null if there is none.
+     * @see #notifySessionID(byte[])
+     */
+    void notifySessionToResume(TlsSession session);
 
     /**
      * Notifies the client of the session_id sent in the ServerHello.
@@ -51,6 +73,8 @@ public interface TlsClient
     void notifySessionID(byte[] sessionID);
 
     void notifySelectedCipherSuite(int selectedCipherSuite);
+
+    void notifySelectedPSK(TlsPSK selectedPSK) throws IOException;
 
     /**
      * The TlsClientProtocol implementation validates that any server extensions received correspond

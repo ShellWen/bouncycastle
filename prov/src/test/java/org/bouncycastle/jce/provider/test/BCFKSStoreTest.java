@@ -51,6 +51,9 @@ import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.util.encoders.Hex;
 import org.bouncycastle.util.test.SimpleTest;
 
+import static org.bouncycastle.jce.provider.test.PKCS12StoreTest.JKS_Store;
+import static org.bouncycastle.jce.provider.test.PKCS12StoreTest.JKS_TEST_PWD;
+
 /**
  * Exercise the  BCFKS KeyStore,
  */
@@ -161,6 +164,14 @@ public class BCFKSStoreTest
         throws Exception
     {
         checkEmptyStore(testPassword);
+    }
+
+    public void shouldWorkWithNullLoadStoreParameter()
+        throws Exception
+    {
+        KeyStore ks = KeyStore.getInstance("BCFKS", "BC");
+
+        ks.load(null);
     }
 
     private void checkEmptyStore(char[] passwd)
@@ -1545,6 +1556,22 @@ public class BCFKSStoreTest
         return bOut.toByteArray();
     }
 
+    private void testJKS()
+        throws Exception
+    {
+        KeyStore ks = KeyStore.getInstance("FIPS", "BC");
+
+        ks.load(new ByteArrayInputStream(JKS_Store), JKS_TEST_PWD);
+
+        isTrue(ks.isCertificateEntry("cert0"));
+
+        ks = KeyStore.getInstance("IFIPS", "BC");
+
+        ks.load(new ByteArrayInputStream(JKS_Store), JKS_TEST_PWD);
+
+        isTrue(ks.isCertificateEntry("cert0"));
+    }
+
     public String getName()
     {
         return "BCFKS";
@@ -1575,6 +1602,8 @@ public class BCFKSStoreTest
         shouldStoreUsingKWP();
         //shouldRejectInconsistentKeys();
         shouldStoreOnePrivateKeyWithChainEdDSA();
+        shouldWorkWithNullLoadStoreParameter();
+        testJKS();
     }
 
     public static void main(

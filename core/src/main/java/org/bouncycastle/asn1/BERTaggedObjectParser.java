@@ -4,22 +4,41 @@ import java.io.IOException;
 
 /**
  * Parser for indefinite-length tagged objects.
+ * 
+ * @deprecated Will be made non-public. Test for and use only {@link ASN1TaggedObjectParser}.
  */
 public class BERTaggedObjectParser
     implements ASN1TaggedObjectParser
 {
-    private boolean _constructed;
-    private int _tagNumber;
-    private ASN1StreamParser _parser;
+    final int _tagClass;
+    final int _tagNo;
+    final ASN1StreamParser _parser;
 
-    BERTaggedObjectParser(
-        boolean             constructed,
-        int                 tagNumber,
-        ASN1StreamParser    parser)
+    BERTaggedObjectParser(int tagClass, int tagNo, ASN1StreamParser parser)
     {
-        _constructed = constructed;
-        _tagNumber = tagNumber;
+        _tagClass = tagClass;
+        _tagNo = tagNo;
         _parser = parser;
+    }
+
+    public int getTagClass()
+    {
+        return _tagClass;
+    }
+
+    public int getTagNo()
+    {
+        return _tagNo;
+    }
+
+    public boolean hasContextTag(int tagNo)
+    {
+        return this._tagClass == BERTags.CONTEXT_SPECIFIC && this._tagNo == tagNo;
+    }
+
+    public boolean hasTag(int tagClass, int tagNo)
+    {
+        return this._tagClass == tagClass && this._tagNo == tagNo;
     }
 
     /**
@@ -29,42 +48,28 @@ public class BERTaggedObjectParser
      */
     public boolean isConstructed()
     {
-        return _constructed;
-    }
-
-    /**
-     * Return the tag number associated with this object.
-     *
-     * @return the tag number.
-     */
-    public int getTagNo()
-    {
-        return _tagNumber;
+        return true;
     }
 
     /**
      * Return an object parser for the contents of this tagged object.
      *
-     * @param tag the actual tag number of the object (needed if implicit).
-     * @param isExplicit true if the contained object was explicitly tagged, false if implicit.
+     * @param tag        the actual tag number of the object (needed if implicit).
+     * @param isExplicit true if the contained object was explicitly tagged, false
+     *                   if implicit.
      * @return an ASN.1 encodable object parser.
-     * @throws IOException if there is an issue building the object parser from the stream.
+     * @throws IOException if there is an issue building the object parser from the
+     *                     stream.
+     * @deprecated See {@link ASN1TaggedObjectParser#getObjectParser(int, boolean)}.
      */
-    public ASN1Encodable getObjectParser(
-        int     tag,
-        boolean isExplicit)
-        throws IOException
+    public ASN1Encodable getObjectParser(int tag, boolean isExplicit) throws IOException
     {
-        if (isExplicit)
+        if (BERTags.CONTEXT_SPECIFIC != getTagClass())
         {
-            if (!_constructed)
-            {
-                throw new IOException("Explicit tags must be constructed (see X.690 8.14.2)");
-            }
-            return _parser.readObject();
+            throw new ASN1Exception("this method only valid for CONTEXT_SPECIFIC tags");
         }
 
-        return _parser.readImplicit(_constructed, tag);
+        return parseBaseUniversal(isExplicit, tag);
     }
 
     /**
@@ -76,7 +81,38 @@ public class BERTaggedObjectParser
     public ASN1Primitive getLoadedObject()
         throws IOException
     {
-        return _parser.readTaggedObject(_constructed, _tagNumber);
+        return _parser.loadTaggedIL(_tagClass, _tagNo);
+    }
+
+    public ASN1Encodable parseBaseUniversal(boolean declaredExplicit, int baseTagNo) throws IOException
+    {
+        if (declaredExplicit)
+        {
+            return _parser.parseObject(baseTagNo);
+        }
+
+        return _parser.parseImplicitConstructedIL(baseTagNo);
+    }
+
+    public ASN1Encodable parseExplicitBaseObject() throws IOException
+    {
+        return _parser.readObject();
+    }
+
+    public ASN1TaggedObjectParser parseExplicitBaseTagged() throws IOException
+    {
+        return _parser.parseTaggedObject();
+    }
+
+    public ASN1TaggedObjectParser parseImplicitBaseTagged(int baseTagClass, int baseTagNo) throws IOException
+    {
+        // TODO[asn1] Special handling can be removed once ASN1ApplicationSpecificParser types removed.
+        if (BERTags.APPLICATION == baseTagClass)
+        {
+            return new BERApplicationSpecificParser(baseTagNo, _parser);
+        }
+
+        return new BERTaggedObjectParser(baseTagClass, baseTagNo, _parser);
     }
 
     /**
@@ -88,7 +124,7 @@ public class BERTaggedObjectParser
     {
         try
         {
-            return this.getLoadedObject();
+            return getLoadedObject();
         }
         catch (IOException e)
         {

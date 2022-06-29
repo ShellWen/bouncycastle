@@ -2,6 +2,7 @@ package org.bouncycastle.tls;
 
 import java.util.Vector;
 
+import org.bouncycastle.tls.crypto.CryptoHashAlgorithm;
 import org.bouncycastle.tls.crypto.TlsSecret;
 
 /**
@@ -10,11 +11,13 @@ import org.bouncycastle.tls.crypto.TlsSecret;
 public class SecurityParameters
 {
     int entity = -1;
+    boolean renegotiating = false;
     boolean secureRenegotiation = false;
     int cipherSuite = CipherSuite.TLS_NULL_WITH_NULL_NULL;
     final short compressionAlgorithm = CompressionMethod._null;
     short maxFragmentLength = -1;
     int prfAlgorithm = -1;
+    int prfCryptoHashAlgorithm = -1;
     short prfHashAlgorithm = -1;
     int prfHashLength = -1;
     int verifyDataLength = -1;
@@ -25,14 +28,12 @@ public class SecurityParameters
     TlsSecret exporterMasterSecret = null;
     TlsSecret handshakeSecret = null;
     TlsSecret masterSecret = null;
-    TlsSecret sharedSecret = null;
     TlsSecret trafficSecretClient = null;
     TlsSecret trafficSecretServer = null;
     byte[] clientRandom = null;
     byte[] serverRandom = null;
     byte[] sessionHash = null;
     byte[] sessionID = null;
-    byte[] psk = null;
     byte[] pskIdentity = null;
     byte[] srpIdentity = null;
     byte[] tlsServerEndPoint = null;
@@ -82,7 +83,6 @@ public class SecurityParameters
         this.exporterMasterSecret = clearSecret(exporterMasterSecret);
         this.handshakeSecret = clearSecret(handshakeSecret);
         this.masterSecret = clearSecret(masterSecret);
-        this.sharedSecret = clearSecret(sharedSecret);
     }
 
     /**
@@ -93,12 +93,9 @@ public class SecurityParameters
         return entity;
     }
 
-    /**
-     * @deprecated Always false.
-     */
     public boolean isRenegotiating()
     {
-        return false;
+        return renegotiating;
     }
 
     public boolean isSecureRenegotiation()
@@ -187,7 +184,17 @@ public class SecurityParameters
     }
 
     /**
+     * @return {@link CryptoHashAlgorithm} for the current {@link PRFAlgorithm}
+     */
+    public int getPRFCryptoHashAlgorithm()
+    {
+        return prfCryptoHashAlgorithm;
+    }
+
+    /**
      * @return {@link HashAlgorithm} for the current {@link PRFAlgorithm}
+     * 
+     * @deprecated Use {@link #getPRFCryptoHashAlgorithm()} instead.
      */
     public short getPRFHashAlgorithm()
     {
@@ -239,11 +246,6 @@ public class SecurityParameters
         return masterSecret;
     }
 
-    public TlsSecret getSharedSecret()
-    {
-        return sharedSecret;
-    }
-
     public TlsSecret getTrafficSecretClient()
     {
         return trafficSecretClient;
@@ -272,11 +274,6 @@ public class SecurityParameters
     public byte[] getSessionID()
     {
         return sessionID;
-    }
-
-    public byte[] getPSK()
-    {
-        return psk;
     }
 
     public byte[] getPSKIdentity()

@@ -170,8 +170,10 @@ public class TlsAEADCipher
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
 
+        int extraLength = (isTLSv13 ? 1 : 0);
+
         // TODO[tls13] If we support adding padding to TLSInnerPlaintext, this will need review
-        int encryptionLength = encryptCipher.getOutputSize(plaintextLength + (isTLSv13 ? 1 : 0));
+        int encryptionLength = encryptCipher.getOutputSize(plaintextLength + extraLength);
         int ciphertextLength = record_iv_length + encryptionLength;
 
         byte[] output = new byte[headerAllocation + ciphertextLength];
@@ -189,14 +191,16 @@ public class TlsAEADCipher
 
         try
         {
+            System.arraycopy(plaintext, plaintextOffset, output, outputPos, plaintextLength);
+            if (isTLSv13)
+            {
+                output[outputPos + plaintextLength] = (byte)contentType;
+            }
+
             encryptCipher.init(nonce, macSize, additionalData);
-
-            byte[] extraInput = isTLSv13 ? new byte[] { (byte)contentType } : TlsUtils.EMPTY_BYTES;
-
-            outputPos += encryptCipher.doFinal(plaintext, plaintextOffset, plaintextLength, extraInput, output,
-                outputPos);
+            outputPos += encryptCipher.doFinal(output, outputPos, plaintextLength + extraLength, output, outputPos);
         }
-        catch (Exception e)
+        catch (RuntimeException e)
         {
             throw new TlsFatalAlert(AlertDescription.internal_error, e);
         }
@@ -247,10 +251,10 @@ public class TlsAEADCipher
         try
         {
             decryptCipher.init(nonce, macSize, additionalData);
-            outputPos = decryptCipher.doFinal(ciphertext, encryptionOffset, encryptionLength, TlsUtils.EMPTY_BYTES,
-                ciphertext, encryptionOffset);
+            outputPos = decryptCipher.doFinal(ciphertext, encryptionOffset, encryptionLength, ciphertext,
+                encryptionOffset);
         }
-        catch (Exception e)
+        catch (RuntimeException e)
         {
             throw new TlsFatalAlert(AlertDescription.bad_record_mac, e);
         }
@@ -347,14 +351,14 @@ public class TlsAEADCipher
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
 
-        setup13Cipher(cipher, nonce, secret, securityParameters.getPRFHashAlgorithm());
+        setup13Cipher(cipher, nonce, secret, securityParameters.getPRFCryptoHashAlgorithm());
     }
 
-    protected void setup13Cipher(TlsAEADCipherImpl cipher, byte[] nonce, TlsSecret secret, short hash)
+    protected void setup13Cipher(TlsAEADCipherImpl cipher, byte[] nonce, TlsSecret secret, int cryptoHashAlgorithm)
         throws IOException
     {
-        byte[] key = TlsCryptoUtils.hkdfExpandLabel(secret, hash, "key", TlsUtils.EMPTY_BYTES, keySize).extract();
-        byte[] iv = TlsCryptoUtils.hkdfExpandLabel(secret, hash, "iv", TlsUtils.EMPTY_BYTES, fixed_iv_length).extract();
+        byte[] key = TlsCryptoUtils.hkdfExpandLabel(secret, cryptoHashAlgorithm, "key", TlsUtils.EMPTY_BYTES, keySize).extract();
+        byte[] iv = TlsCryptoUtils.hkdfExpandLabel(secret, cryptoHashAlgorithm, "iv", TlsUtils.EMPTY_BYTES, fixed_iv_length).extract();
 
         cipher.setKey(key, 0, keySize);
         System.arraycopy(iv, 0, nonce, 0, fixed_iv_length);

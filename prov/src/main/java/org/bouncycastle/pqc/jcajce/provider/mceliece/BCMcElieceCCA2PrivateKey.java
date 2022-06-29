@@ -1,15 +1,19 @@
 package org.bouncycastle.pqc.jcajce.provider.mceliece;
 
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.security.PrivateKey;
 
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
+import org.bouncycastle.jcajce.util.MessageDigestUtils;
 import org.bouncycastle.pqc.asn1.McElieceCCA2PrivateKey;
 import org.bouncycastle.pqc.asn1.PQCObjectIdentifiers;
 import org.bouncycastle.pqc.crypto.mceliece.McElieceCCA2KeyPairGenerator;
 import org.bouncycastle.pqc.crypto.mceliece.McElieceCCA2PrivateKeyParameters;
+import org.bouncycastle.pqc.crypto.util.PrivateKeyFactory;
 import org.bouncycastle.pqc.math.linearalgebra.GF2Matrix;
 import org.bouncycastle.pqc.math.linearalgebra.GF2mField;
 import org.bouncycastle.pqc.math.linearalgebra.Permutation;
@@ -26,11 +30,17 @@ public class BCMcElieceCCA2PrivateKey
 {
     private static final long serialVersionUID = 1L;
 
-    private McElieceCCA2PrivateKeyParameters params;
+    private transient McElieceCCA2PrivateKeyParameters params;
 
     public BCMcElieceCCA2PrivateKey(McElieceCCA2PrivateKeyParameters params)
     {
         this.params = params;
+    }
+
+    private void init(PrivateKeyInfo privateKeyInfo)
+        throws IOException
+    {
+        this.params = (McElieceCCA2PrivateKeyParameters)PrivateKeyFactory.createKey(privateKeyInfo);
     }
 
     /**
@@ -178,7 +188,7 @@ public class BCMcElieceCCA2PrivateKey
         PrivateKeyInfo pki;
         try
         {
-            McElieceCCA2PrivateKey privateKey = new McElieceCCA2PrivateKey(getN(), getK(), getField(), getGoppaPoly(), getP(), Utils.getDigAlgId(params.getDigest()));
+            McElieceCCA2PrivateKey privateKey = new McElieceCCA2PrivateKey(getN(), getK(), getField(), getGoppaPoly(), getP(), MessageDigestUtils.getDigestAlgID(params.getDigest()));
             AlgorithmIdentifier algorithmIdentifier = new AlgorithmIdentifier(PQCObjectIdentifiers.mcElieceCca2);
 
             pki = new PrivateKeyInfo(algorithmIdentifier, privateKey);
@@ -199,5 +209,25 @@ public class BCMcElieceCCA2PrivateKey
     AsymmetricKeyParameter getKeyParams()
     {
         return params;
+    }
+
+    private void readObject(
+        ObjectInputStream in)
+        throws IOException, ClassNotFoundException
+    {
+        in.defaultReadObject();
+
+        byte[] enc = (byte[])in.readObject();
+
+        init(PrivateKeyInfo.getInstance(enc));
+    }
+
+    private void writeObject(
+        ObjectOutputStream out)
+        throws IOException
+    {
+        out.defaultWriteObject();
+
+        out.writeObject(this.getEncoded());
     }
 }

@@ -157,6 +157,33 @@ public interface BCObjectIdentifiers
     public static final ASN1ObjectIdentifier qTESLA_p_III = qTESLA.branch("12");
 
     /**
+     * SPHINCS+
+     */
+    public static final ASN1ObjectIdentifier sphincsPlus = bc_sig.branch("5");
+    public static final ASN1ObjectIdentifier sphincsPlus_shake_256 = sphincsPlus.branch("1");
+    public static final ASN1ObjectIdentifier sphincsPlus_sha_256 = sphincsPlus.branch("2");
+    public static final ASN1ObjectIdentifier sphincsPlus_sha_512 = sphincsPlus.branch("3");
+
+    /**
+     * Picnic
+     */
+    public static final ASN1ObjectIdentifier picnic = bc_sig.branch("6");
+    public static final ASN1ObjectIdentifier picnicl1fs = picnic.branch("1");
+    public static final ASN1ObjectIdentifier picnicl1ur = picnic.branch("2");
+    public static final ASN1ObjectIdentifier picnicl3fs = picnic.branch("3");
+    public static final ASN1ObjectIdentifier picnicl3ur = picnic.branch("4");
+    public static final ASN1ObjectIdentifier picnicl5fs = picnic.branch("5");
+    public static final ASN1ObjectIdentifier picnicl5ur = picnic.branch("6");
+    public static final ASN1ObjectIdentifier picnic3l1 = picnic.branch("7");
+    public static final ASN1ObjectIdentifier picnic3l3 = picnic.branch("8");
+    public static final ASN1ObjectIdentifier picnic3l5 = picnic.branch("9");
+    public static final ASN1ObjectIdentifier picnicl1full = picnic.branch("10");
+    public static final ASN1ObjectIdentifier picnicl3full = picnic.branch("11");
+    public static final ASN1ObjectIdentifier picnicl5full = picnic.branch("12");
+
+
+
+    /**
      * key_exchange(3) algorithms
      */
     public static final ASN1ObjectIdentifier bc_exch = bc.branch("3");
@@ -167,11 +194,75 @@ public interface BCObjectIdentifiers
     public static final ASN1ObjectIdentifier newHope = bc_exch.branch("1");
 
     /**
-     * X.509 extension(4) values
+     * X.509 extension/certificate types
      * <p>
      * 1.3.6.1.4.1.22554.4
      */
     public static final ASN1ObjectIdentifier bc_ext        = bc.branch("4");
 
     public static final ASN1ObjectIdentifier linkedCertificate = bc_ext.branch("1");
+    public static final ASN1ObjectIdentifier external_value = bc_ext.branch("2");
+
+    /**
+     * KEM(5) algorithms
+     */
+    public static final ASN1ObjectIdentifier bc_kem = bc.branch("5");
+
+    /**
+     * Classic McEliece
+     */
+    public static final ASN1ObjectIdentifier pqc_kem_mceliece = bc_kem.branch("1");
+
+    public static final ASN1ObjectIdentifier mceliece348864_r3 = pqc_kem_mceliece.branch("1");
+    public static final ASN1ObjectIdentifier mceliece348864f_r3 = pqc_kem_mceliece.branch("2");
+    public static final ASN1ObjectIdentifier mceliece460896_r3 = pqc_kem_mceliece.branch("3");
+    public static final ASN1ObjectIdentifier mceliece460896f_r3 = pqc_kem_mceliece.branch("4");
+    public static final ASN1ObjectIdentifier mceliece6688128_r3 = pqc_kem_mceliece.branch("5");
+    public static final ASN1ObjectIdentifier mceliece6688128f_r3 = pqc_kem_mceliece.branch("6");
+    public static final ASN1ObjectIdentifier mceliece6960119_r3 = pqc_kem_mceliece.branch("7");
+    public static final ASN1ObjectIdentifier mceliece6960119f_r3 = pqc_kem_mceliece.branch("8");
+    public static final ASN1ObjectIdentifier mceliece8192128_r3 = pqc_kem_mceliece.branch("9");
+    public static final ASN1ObjectIdentifier mceliece8192128f_r3 = pqc_kem_mceliece.branch("10");
+
+
+    /**
+     * Frodo
+     */
+    public static final ASN1ObjectIdentifier pqc_kem_frodo = bc_kem.branch("2");
+
+    public static final ASN1ObjectIdentifier frodokem19888r3 = pqc_kem_frodo.branch("1");
+    public static final ASN1ObjectIdentifier frodokem19888shaker3 = pqc_kem_frodo.branch("2");
+    public static final ASN1ObjectIdentifier frodokem31296r3 = pqc_kem_frodo.branch("3");
+    public static final ASN1ObjectIdentifier frodokem31296shaker3 = pqc_kem_frodo.branch("4");
+    public static final ASN1ObjectIdentifier frodokem43088r3 = pqc_kem_frodo.branch("5");
+    public static final ASN1ObjectIdentifier frodokem43088shaker3 = pqc_kem_frodo.branch("6");
+
+    /**
+     * SABER
+     */
+    public static final ASN1ObjectIdentifier pqc_kem_saber = bc_kem.branch("3");
+
+    public static final ASN1ObjectIdentifier lightsaberkem128r3 = pqc_kem_saber.branch("1");
+    public static final ASN1ObjectIdentifier saberkem128r3 = pqc_kem_saber.branch("2");
+    public static final ASN1ObjectIdentifier firesaberkem128r3 = pqc_kem_saber.branch("3");
+    public static final ASN1ObjectIdentifier lightsaberkem192r3 = pqc_kem_saber.branch("4");
+    public static final ASN1ObjectIdentifier saberkem192r3 = pqc_kem_saber.branch("5");
+    public static final ASN1ObjectIdentifier firesaberkem192r3 = pqc_kem_saber.branch("6");
+    public static final ASN1ObjectIdentifier lightsaberkem256r3 = pqc_kem_saber.branch("7");
+    public static final ASN1ObjectIdentifier saberkem256r3 = pqc_kem_saber.branch("8");
+    public static final ASN1ObjectIdentifier firesaberkem256r3 = pqc_kem_saber.branch("9");
+
+    /**
+     * SIKE
+     */
+    public static final ASN1ObjectIdentifier pqc_kem_sike = bc_kem.branch("4");
+
+    public static final ASN1ObjectIdentifier sikep434 = pqc_kem_sike.branch("1");
+    public static final ASN1ObjectIdentifier sikep503 = pqc_kem_sike.branch("2");
+    public static final ASN1ObjectIdentifier sikep610 = pqc_kem_sike.branch("3");
+    public static final ASN1ObjectIdentifier sikep751 = pqc_kem_sike.branch("4");
+    public static final ASN1ObjectIdentifier sikep434_compressed = pqc_kem_sike.branch("5");
+    public static final ASN1ObjectIdentifier sikep503_compressed = pqc_kem_sike.branch("6");
+    public static final ASN1ObjectIdentifier sikep610_compressed = pqc_kem_sike.branch("7");
+    public static final ASN1ObjectIdentifier sikep751_compressed = pqc_kem_sike.branch("8");
 }

@@ -53,7 +53,7 @@ import java.io.IOException;
 public class DLSet
     extends ASN1Set
 {
-    private int bodyLength = -1;
+    private int contentsLength = -1;
 
     /**
      * create an empty set
@@ -91,9 +91,9 @@ public class DLSet
         super(isSorted, elements);
     }
 
-    private int getBodyLength() throws IOException
+    private int getContentsLength() throws IOException
     {
-        if (bodyLength < 0)
+        if (contentsLength < 0)
         {
             int count = elements.length;
             int totalLength = 0;
@@ -101,20 +101,18 @@ public class DLSet
             for (int i = 0; i < count; ++i)
             {
                 ASN1Primitive dlObject = elements[i].toASN1Primitive().toDLObject();
-                totalLength += dlObject.encodedLength();
+                totalLength += dlObject.encodedLength(true);
             }
 
-            this.bodyLength = totalLength;
+            this.contentsLength = totalLength;
         }
 
-        return bodyLength;
+        return contentsLength;
     }
 
-    int encodedLength() throws IOException
+    int encodedLength(boolean withTag) throws IOException
     {
-        int length = getBodyLength();
-
-        return 1 + StreamUtil.calculateBodyLength(length) + length;
+        return ASN1OutputStream.getLengthOfEncodingDL(withTag, getContentsLength());
     }
 
     /**
@@ -127,17 +125,14 @@ public class DLSet
      */
     void encode(ASN1OutputStream out, boolean withTag) throws IOException
     {
-        if (withTag)
-        {
-            out.write(BERTags.SET | BERTags.CONSTRUCTED);
-        }
+        out.writeIdentifier(withTag, BERTags.CONSTRUCTED | BERTags.SET);
 
         ASN1OutputStream dlOut = out.getDLSubStream();
 
         int count = elements.length;
-        if (bodyLength >= 0 || count > 16)
+        if (contentsLength >= 0 || count > 16)
         {
-            out.writeLength(getBodyLength());
+            out.writeDL(getContentsLength());
 
             for (int i = 0; i < count; ++i)
             {
@@ -153,11 +148,11 @@ public class DLSet
             {
                 ASN1Primitive dlObject = elements[i].toASN1Primitive().toDLObject();
                 dlObjects[i] = dlObject;
-                totalLength += dlObject.encodedLength();
+                totalLength += dlObject.encodedLength(true);
             }
 
-            this.bodyLength = totalLength;
-            out.writeLength(totalLength);
+            this.contentsLength = totalLength;
+            out.writeDL(totalLength);
 
             for (int i = 0; i < count; ++i)
             {

@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
+import org.bouncycastle.util.Arrays;
+
 public class PskIdentity
 {
     protected byte[] identity;
@@ -28,6 +30,11 @@ public class PskIdentity
         this.obfuscatedTicketAge = obfuscatedTicketAge;
     }
 
+    public int getEncodedLength()
+    {
+        return 6 + identity.length;
+    }
+
     public byte[] getIdentity()
     {
         return identity;
@@ -49,5 +56,23 @@ public class PskIdentity
         byte[] identity = TlsUtils.readOpaque16(input, 1);
         long obfuscatedTicketAge = TlsUtils.readUint32(input);
         return new PskIdentity(identity, obfuscatedTicketAge);
+    }
+
+    public boolean equals(Object obj)
+    {
+        if (!(obj instanceof PskIdentity))
+        {
+            return false;
+        }
+
+        PskIdentity that = (PskIdentity)obj;
+
+        return this.obfuscatedTicketAge == that.obfuscatedTicketAge
+            && Arrays.constantTimeAreEqual(this.identity, that.identity);
+    }
+
+    public int hashCode()
+    {
+        return Arrays.hashCode(identity) ^ (int)obfuscatedTicketAge ^ (int)(obfuscatedTicketAge >>> 32);
     }
 }

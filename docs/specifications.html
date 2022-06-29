@@ -175,6 +175,7 @@ and has the following implemenations.
 <tr><td><b>EAXBlockCipher</b></td><td>BlockCipher</td><td>&nbsp;</td></tr>
 <tr><td><b>CCMBlockCipher</b></td><td>BlockCipher</td><td>Packet mode - requires all data up front.</td></tr>
 <tr><td><b>GCMBlockCipher</b></td><td>BlockCipher</td><td>Packet mode - NIST SP 800-38D.</td></tr>
+<tr><td><b>GCMSIVBlockCipher</b></td><td>BlockCipher</td><td>Packet mode - RFC 8452.</td></tr>
 <tr><td><b>KCCMBlockCipher</b></td><td>BlockCipher</td><td>DSTU 7624 Packet mode - requires all data up front.</td></tr>
 <tr><td><b>OCBBlockCipher</b></td><td>BlockCipher</td><td>&nbsp;</td></tr>
 <tr><td><b>ChaCha20Poly1305</b></td><td>AEADCipher</td><td>&nbsp;</td></tr>
@@ -222,6 +223,7 @@ used with the above modes.
 <tr><td><b>GOST28147Engine</b></td><td>256</td><td>64 bit</td><td>Has a range of S-boxes</td></tr>
 <tr><td><b>GOST3412_2015Engine</b></td><td>256</td><td>128 bit</td><td>&nbsp;</td></tr>
 <tr><td><b>IDEAEngine</b></td><td>128</td><td>64 bit</td><td>&nbsp;</td></tr>
+<tr><td><b>LEAEngine</b></td><td>128</td><td>128/192/256 bit</td><td>&nbsp;</td></tr>
 <tr><td><b>NoekeonEngine</b></td><td>128</td><td>128 bit</td><td>&nbsp;</td></tr>
 <tr><td><b>RC2Engine</b></td><td>0 .. 1024 </td><td>64 bit</td><td>&nbsp;</td></tr>
 <tr><td><b>RC532Engine</b></td><td>0 .. 128 </td><td>64 bit</td><td>Uses a 32 bit word</td></tr>
@@ -315,11 +317,15 @@ implementations
 <tr><th>Name</th><th>Output (in bits)</th><th>Notes</th></tr>
 <tr><td><b>Blake2sDigest</b></td><td>128, 160, 224, 256</td><td></td></tr>
 <tr><td><b>Blake2bDigest</b></td><td>224, 256, 384, 512</td><td></td></tr>
+<tr><td><b>Blake3Digest</b></td><td>224, 256, 384, 512</td><td></td></tr>
+<tr><td><b>CSHAKEDigest</b></td><td>XOF</td><td>SP 800-185, based on SHAKE128/SHAKE256</td></tr>
 <tr><td><b>DSTU7564Digest</b></td><td>256, 384, 512</td><td></td></tr>
+<tr><td><b>Kangaroo</b></td><td>XOF</td><td>Built on Keccak-p</td></tr>
 <tr><td><b>KeccakDigest</b></td><td>224, 256, 288, 384, 512</td><td></td></tr>
 <tr><td><b>MD2Digest</b></td><td>128</td><td>&nbsp;</td></tr>
 <tr><td><b>MD4Digest</b></td><td>128</td><td>&nbsp;</td></tr>
 <tr><td><b>MD5Digest</b></td><td>128</td><td>&nbsp;</td></tr>
+<tr><td><b>ParallelHash</b></td><td>XOF</td><td>XOF based on cSHAKE (SP 800-185).</td></tr>
 <tr><td><b>RipeMD128Digest</b></td><td>128</td><td>basic RipeMD</td></tr>
 <tr><td><b>RipeMD160Digest</b></td><td>160</td><td>enhanced version of RipeMD</td></tr>
 <tr><td><b>RipeMD256Digest</b></td><td>256</td><td>expanded version of RipeMD128</td></tr>
@@ -334,6 +340,7 @@ implementations
 <tr><td><b>SkeinDigest</b></td><td>any byte length</td><td>256 bit, 512 bit and 1024 state sizes. Additional parameterisation using SkeinParameters.</td></tr>
 <tr><td><b>SM3Digest</b></td><td>256</td><td>The SM3 Digest.</td></tr>
 <tr><td><b>TigerDigest</b></td><td>192</td><td>The Tiger Digest.</td></tr>
+<tr><td><b>TupleHash</b></td><td>XOF</td><td>XOF based on cSHAKE (SP 800-185).</td></tr>
 <tr><td><b>GOST3411Digest</b></td><td>256</td><td>The GOST-3411 Digest.</td></tr>
 <tr><td><b>GOST3411_2012_256Digest</b></td><td>256</td><td>The GOST-3411-2012-256 Digest.</td></tr>
 <tr><td><b>GOST3411_2012_512Digest</b></td><td>512</td><td>The GOST-3411-2012-512 Digest.</td></tr>
@@ -428,13 +435,30 @@ Classes for generating Diffie-Hellman parameters can be found in the
 
 <h4>Key Encapsulation Mechanisms</h4>
 <p>
-The base class is <b>KeyEncapsulation</b> and has the following
+The first set have a base class <b>KeyEncapsulation</b> with the following
 sub-classes
 </p>
 <table cellpadding=5 cellspacing=0 border=1 width=80%>
+<thead>
 <tr><th>Name</th><th>Notes</th></tr>
+</thead>
+<tbody>
 <tr><td><b>RSAKeyEncapsulation</b></td><td>RSA-KEM from ISO 18033-2</td></tr>
 <tr><td><b>PKCS5S2ParametersGenerator</b></td><td>ECIES-KEM from ISO 18033-2</td></tr>
+</tbody>
+</table>
+<p>
+The second, post-quantum set use <b>EncapsulatdSecretGenerator</b> and <b>EncapsulatedSecretGenerator</b>.
+</p>
+<table cellpadding=5 cellspacing=0 border=1 width=80%>
+<thead>
+<tr><th>Name</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr><td><b>CMCEKEMGenerator, CMCEKEMExtractor</b></td><td>Class McEliece (NIST Alternate Candidate)</td></tr>
+<tr><td><b>FrodoKEMGenerator, FrodoKEMExtractor</b></td><td>FrodoKEM (NIST Alternate Candidate)</td></tr>
+<tr><td><b>SABERKEMGenerator, SABERKEMExtractor</b></td><td>SABER (NIST Finalist)</td></tr>
+</tbody>
 </table>
 
 <h4>Signers</h4>
@@ -559,19 +583,22 @@ The policy files can be found at the same place you downloaded the JDK.
 
 <p>Modes:
 <ul>
-<li>ECB
-<li>CBC
-<li>OFB(n)
-<li>CFB(n)
-<li>SIC (also known as CTR)
-<li>OpenPGPCFB
-<li>CTS (equivalent to CBC/WithCTS)
-<li>GOFB
-<li>GCFB
-<li>CCM (AEAD)
-<li>EAX (AEAD)
-<li>GCM (AEAD)
-<li>OCB (AEAD)
+<li>ECB</li>
+<li>CBC</li>
+<li>OFB(n)</li>
+<li>CFB(n)</li>
+<li>SIC (also known as CTR)</li>
+<li>OpenPGPCFB</li>
+<li>CTS (equivalent to CBC/WithCTS)</li>
+<li>FF1</li>
+<li>FF3-1</li>
+<li>GOFB</li>
+<li>GCFB</li>
+<li>CCM (AEAD)</li>
+<li>EAX (AEAD)</li>
+<li>GCM (AEAD)</li>
+<li>GCM-SIV (AEAD)</li>
+<li>OCB (AEAD)</li>
 </ul>
 
 <p>
@@ -726,6 +753,24 @@ Note: with basic "DH" only the basic algorithm fits in with the JCE API, if
 you're using long-term public keys you may want to look at the light-weight
 API, there are also additional JCE support classes for UserKeyingMaterial and MQVParameters in the <b>org.bouncycastle.jcajce.spec</b> package.
 </p>
+<h4>Key Encapsulation Mechanisms</h4>
+
+<table cellpadding=5 cellspacing=0 border=1 width=80%>
+<thead>
+<tr><th>Name</th><th>ParameterSpec Class</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr><td><b>CMCE</b></td><td>CMCEParameterSpec</td><td>Class McEliece (NIST Alternate Candidate)</td></tr>
+<tr><td><b>Frodo</b></td><td>FrodoParameterSpec</td><td>FrodoKEM (NIST Alternate Candidate)</td></tr>
+<tr><td><b>SABER</b></td><td>SABERParameterSpec</td><td>SABER (NIST Finalist)</td></tr>
+</tbody>
+</table>
+<p>
+If used for key wrapping via the Cipher class, you will also need to make use of the KEMParameterSpec class to specify a symmetric wrapping algorithm.
+</p>
+<p>
+If access to the shared secret is required, KeyGenerator implementations can also be used in conjuction with the KEMGenerateSpec and the KEMExtractSpec which return the shared secret directly.
+</p>
 <h4>ECIES</h4>
 <p>
 An implementation of ECIES (stream mode) as described in IEEE P 1363a. This now based more formally on Victor Shoup's paper and should be compatible with the implementation in Crypto++ (version 6 onwards).
@@ -742,6 +787,7 @@ An implementation of ECIES (stream mode) as described in IEEE P 1363a. This now 
 <tr><td>Blake2s-160</td><td>160</td><td>&nbsp;</td></tr>
 <tr><td>Blake2s-224</td><td>224</td><td>&nbsp;</td></tr>
 <tr><td>Blake2s-256</td><td>256</td><td>&nbsp;</td></tr>
+<tr><td>Blake3-256</td><td>256</td><td>&nbsp;</td></tr>
 <tr><td>DSTU7564-256</td><td>256</td><td>&nbsp;</td></tr>
 <tr><td>DSTU7564-384</td><td>384</td><td>&nbsp;</td></tr>
 <tr><td>DSTU7564-512</td><td>512</td><td>&nbsp;</td></tr>
@@ -859,6 +905,7 @@ An implementation of ECIES (stream mode) as described in IEEE P 1363a. This now 
 <li>SHA1withRSA</li>
 <li>RIPEMD128withRSA</li>
 <li>RIPEMD160withRSA</li>
+<li>RIPEMD160withDSA</li>
 <li>RIPEMD160withECDSA</li>
 <li>RIPEMD256withRSA</li>
 <li>SHA1withDSA</li>
@@ -895,6 +942,17 @@ An implementation of ECIES (stream mode) as described in IEEE P 1363a. This now 
 <li>SHA3-256withECDSA</li>
 <li>SHA3-384withECDSA</li>
 <li>SHA3-512withECDSA</li>
+<li>SHAKE128withECDSA</li>
+<li>SHAKE256withECDSA</li>
+<li>SHA1withPLAIN-ECDSA</li>
+<li>SHA224withPLAIN-ECDSA</li>
+<li>SHA256withPLAIN-ECDSA</li>
+<li>SHA384withPLAIN-ECDSA</li>
+<li>SHA512withPLAIN-ECDSA</li>
+<li>SHA3-224withPLAIN-ECDSA</li>
+<li>SHA3-256withPLAIN-ECDSA</li>
+<li>SHA3-384withPLAIN-ECDSA</li>
+<li>SHA3-512withPLAIN-ECDSA</li>
 <li>SHA1withECNR</li>
 <li>SHA224withECNR</li>
 <li>SHA256withECNR</li>
@@ -933,6 +991,7 @@ An implementation of ECIES (stream mode) as described in IEEE P 1363a. This now 
 <li>SHA256withSM2</li>
 <li>SM3withSM2</li>
 <li>LMS</li>
+<li>SPHINCS+</li>
 <li>XMSS-SHA256</li>
 <li>XMSS-SHA512</li>
 <li>XMSS-SHAKE128</li>
@@ -1067,8 +1126,8 @@ package (including the test classes) you need the jar files for
 the following APIs.
 <ul>
 <li>Junit - <a href="https://www.junit.org">https://www.junit.org</a></li>
-<li>JavaMail - <a href="http://java.sun.com/products/javamail/index.html">http://java.sun.com/products/javamail/index.html</a></li>
-<li>The Java Activation Framework - <a href="http://java.sun.com/products/javabeans/glasgow/jaf.html">http://java.sun.com/products/javabeans/glasgow/jaf.html</a></li>
+<li>JavaMail - <a href="https://java.sun.com/products/javamail/index.html">https://java.sun.com/products/javamail/index.html</a></li>
+<li>The Java Activation Framework - <a href="https://java.sun.com/products/javabeans/glasgow/jaf.html">https://java.sun.com/products/javabeans/glasgow/jaf.html</a></li>
 </ul>
 
 <h3>7.1 Setting up BouncyCastle S/MIME in JavaMail</h3>

@@ -2,6 +2,7 @@ package org.bouncycastle.cert.test;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -60,6 +61,7 @@ import org.bouncycastle.asn1.isara.IsaraObjectIdentifiers;
 import org.bouncycastle.asn1.misc.MiscObjectIdentifiers;
 import org.bouncycastle.asn1.nist.NISTObjectIdentifiers;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
+import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.pkcs.RSAPublicKey;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x500.X500NameBuilder;
@@ -111,6 +113,7 @@ import org.bouncycastle.jce.spec.ECPrivateKeySpec;
 import org.bouncycastle.jce.spec.ECPublicKeySpec;
 import org.bouncycastle.jce.spec.GOST3410ParameterSpec;
 import org.bouncycastle.math.ec.ECCurve;
+import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.ContentVerifierProvider;
 import org.bouncycastle.operator.DefaultDigestAlgorithmIdentifierFinder;
@@ -119,13 +122,14 @@ import org.bouncycastle.operator.bc.BcRSAContentSignerBuilder;
 import org.bouncycastle.operator.bc.BcRSAContentVerifierProviderBuilder;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder;
+import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 import org.bouncycastle.pqc.crypto.lms.LMOtsParameters;
 import org.bouncycastle.pqc.crypto.lms.LMSigParameters;
 import org.bouncycastle.pqc.jcajce.interfaces.XMSSPrivateKey;
 import org.bouncycastle.pqc.jcajce.provider.BouncyCastlePQCProvider;
 import org.bouncycastle.pqc.jcajce.spec.LMSKeyGenParameterSpec;
-import org.bouncycastle.pqc.jcajce.spec.QTESLAParameterSpec;
 import org.bouncycastle.pqc.jcajce.spec.SPHINCS256KeyGenParameterSpec;
+import org.bouncycastle.pqc.jcajce.spec.SPHINCSPlusParameterSpec;
 import org.bouncycastle.pqc.jcajce.spec.XMSSMTParameterSpec;
 import org.bouncycastle.pqc.jcajce.spec.XMSSParameterSpec;
 import org.bouncycastle.util.Encodable;
@@ -1359,7 +1363,7 @@ public class CertTest
         }
         catch (Exception e)
         {
-            fail(dump + Strings.lineSeparator() + getName() + ": " + id + " failed - exception " + e.toString(), e);
+            fail(dump + Strings.lineSeparator() + getName() + ": " + id + " failed - exception " + e, e);
         }
 
     }
@@ -1388,7 +1392,7 @@ public class CertTest
         }
         catch (Exception e)
         {
-            fail(dump + Strings.lineSeparator() + getName() + ": " + id + " failed - exception " + e.toString(), e);
+            fail(dump + Strings.lineSeparator() + getName() + ": " + id + " failed - exception " + e, e);
         }
 
     }
@@ -1417,7 +1421,7 @@ public class CertTest
         }
         catch (Exception e)
         {
-            fail(dump + Strings.lineSeparator() + getName() + ": " + id + " failed - exception " + e.toString(), e);
+            fail(dump + Strings.lineSeparator() + getName() + ": " + id + " failed - exception " + e, e);
         }
 
     }
@@ -1449,7 +1453,7 @@ public class CertTest
         }
         catch (Exception e)
         {
-            fail(dump + Strings.lineSeparator() + getName() + ": " + id + " failed - exception " + e.toString(), e);
+            fail(dump + Strings.lineSeparator() + getName() + ": " + id + " failed - exception " + e, e);
         }
 
     }
@@ -1480,7 +1484,7 @@ public class CertTest
         }
         catch (Exception e)
         {
-            fail(dump + Strings.lineSeparator() + getName() + ": " + id + " failed - exception " + e.toString(), e);
+            fail(dump + Strings.lineSeparator() + getName() + ": " + id + " failed - exception " + e, e);
         }
 
     }
@@ -1529,7 +1533,7 @@ public class CertTest
         }
         catch (Exception e)
         {
-            fail(dump + Strings.lineSeparator() + getName() + ": " + id + " failed - exception " + e.toString(), e);
+            fail(dump + Strings.lineSeparator() + getName() + ": " + id + " failed - exception " + e, e);
         }
     }
 
@@ -1809,7 +1813,7 @@ public class CertTest
         }
         catch (Exception e)
         {
-            fail("error setting up keys - " + e.toString());
+            fail("error setting up keys - " + e);
             return;
         }
 
@@ -1904,7 +1908,7 @@ public class CertTest
         }
         catch (Exception e)
         {
-            fail("error setting up keys - " + e.toString());
+            fail("error setting up keys - " + e);
             return;
         }
 
@@ -1965,7 +1969,7 @@ public class CertTest
         }
     }
 
-    private X500NameBuilder createStdBuilder()
+    private static X500NameBuilder createStdBuilder()
     {
         X500NameBuilder builder = new X500NameBuilder(BCStyle.INSTANCE);
 
@@ -2010,7 +2014,7 @@ public class CertTest
         }
         catch (Exception e)
         {
-            fail("error setting up keys - " + e.toString());
+            fail("error setting up keys - " + e);
             return;
         }
 
@@ -2082,7 +2086,7 @@ public class CertTest
         }
         catch (Exception e)
         {
-            fail("error setting generating cert - " + e.toString());
+            fail("error setting generating cert - " + e);
         }
 
         X509Principal pr = new X509Principal("O=\"The Bouncy Castle, The Legion of\",E=feedback-crypto@bouncycastle.org,ST=Victoria,L=Melbourne,C=AU");
@@ -2213,7 +2217,7 @@ public class CertTest
         }
         catch (Exception e)
         {
-            fail(dump + Strings.lineSeparator() + getName() + ": " + id + " failed - exception " + e.toString(), e);
+            fail(dump + Strings.lineSeparator() + getName() + ": " + id + " failed - exception " + e, e);
         }
 
     }
@@ -2240,7 +2244,7 @@ public class CertTest
         }
         catch (Exception e)
         {
-            fail("error setting up keys - " + e.toString());
+            fail("error setting up keys - " + e);
             return;
         }
 
@@ -2378,7 +2382,7 @@ public class CertTest
         {
             ASN1Enumerated reasonCode = ASN1Enumerated.getInstance(ext.getParsedValue());
 
-            if (reasonCode.intValueExact() != CRLReason.privilegeWithdrawn)
+            if (!reasonCode.hasValue(CRLReason.privilegeWithdrawn))
             {
                 fail("CRL entry reasonCode wrong");
             }
@@ -2499,7 +2503,7 @@ public class CertTest
         {
             ASN1Enumerated reasonCode = (ASN1Enumerated)fromExtensionValue(ext);
 
-            if (reasonCode.intValueExact() != CRLReason.privilegeWithdrawn)
+            if (!reasonCode.hasValue(CRLReason.privilegeWithdrawn))
             {
                 fail("CRL entry reasonCode wrong");
             }
@@ -2584,7 +2588,7 @@ public class CertTest
         {
             ASN1Enumerated reasonCode = (ASN1Enumerated)fromExtensionValue(ext);
 
-            if (reasonCode.intValueExact() != CRLReason.privilegeWithdrawn)
+            if (!reasonCode.hasValue(CRLReason.privilegeWithdrawn))
             {
                 fail("CRL entry reasonCode wrong");
             }
@@ -2628,7 +2632,7 @@ public class CertTest
                 {
                     ASN1Enumerated reasonCode = (ASN1Enumerated)ASN1Enumerated.getInstance(extn.getParsedValue());
 
-                    if (reasonCode.intValueExact() != CRLReason.privilegeWithdrawn)
+                    if (!reasonCode.hasValue(CRLReason.privilegeWithdrawn))
                     {
                         fail("CRL entry reasonCode wrong");
                     }
@@ -2755,7 +2759,7 @@ public class CertTest
         {
             ASN1Enumerated reasonCode = (ASN1Enumerated)fromExtensionValue(ext);
 
-            if (reasonCode.intValueExact() != CRLReason.privilegeWithdrawn)
+            if (!reasonCode.hasValue(CRLReason.privilegeWithdrawn))
             {
                 fail("CRL entry reasonCode wrong");
             }
@@ -2985,7 +2989,7 @@ public class CertTest
         {
             ASN1Enumerated reasonCode = (ASN1Enumerated)fromExtensionValue(ext);
 
-            if (reasonCode.intValueExact() != CRLReason.privilegeWithdrawn)
+            if (!reasonCode.hasValue(CRLReason.privilegeWithdrawn))
             {
                 fail("CRL entry reasonCode wrong");
             }
@@ -3470,17 +3474,17 @@ public class CertTest
     }
 
     /*
-     * we generate a self signed certificate for the sake of testing - qTESLA
+     * we generate a self signed certificate for the sake of testing - SPHINCSPlus
      */
-    public void checkCreationQTESLA()
+    public void checkCreationSPHINCSPlus()
         throws Exception
     {
         //
         // set up the keys
         //
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("qTESLA", "BCPQC");
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("SPHINCSPlus", "BCPQC");
 
-        kpg.initialize(new QTESLAParameterSpec(QTESLAParameterSpec.PROVABLY_SECURE_I), new SecureRandom());
+        kpg.initialize(SPHINCSPlusParameterSpec.sha2_256f, new SecureRandom());
 
         KeyPair kp = kpg.generateKeyPair();
 
@@ -3911,7 +3915,9 @@ public class CertTest
 
         org.bouncycastle.asn1.x509.Certificate crt = org.bouncycastle.asn1.x509.Certificate.getInstance(cert.getEncoded());
 
-        isTrue(MiscObjectIdentifiers.id_alg_composite.equals(crt.getSubjectPublicKeyInfo().getAlgorithm().getAlgorithm()));
+        isTrue(MiscObjectIdentifiers.id_alg_composite.equals(crt.getSignatureAlgorithm().getAlgorithm()));
+        isTrue(MiscObjectIdentifiers.id_alg_composite.equals(crt.getTBSCertificate().getSignature().getAlgorithm()));
+        isTrue(MiscObjectIdentifiers.id_composite_key.equals(crt.getSubjectPublicKeyInfo().getAlgorithm().getAlgorithm()));
         isTrue(null == crt.getSubjectPublicKeyInfo().getAlgorithm().getParameters());
 
         KeyFactory kFact = KeyFactory.getInstance("Composite", "BC");
@@ -4010,7 +4016,7 @@ public class CertTest
 
         org.bouncycastle.asn1.x509.Certificate crt = org.bouncycastle.asn1.x509.Certificate.getInstance(cert.getEncoded());
 
-        isTrue(MiscObjectIdentifiers.id_alg_composite.equals(crt.getSubjectPublicKeyInfo().getAlgorithm().getAlgorithm()));
+        isTrue(MiscObjectIdentifiers.id_composite_key.equals(crt.getSubjectPublicKeyInfo().getAlgorithm().getAlgorithm()));
         isTrue(null == crt.getSubjectPublicKeyInfo().getAlgorithm().getParameters());
 
         KeyFactory kFact = KeyFactory.getInstance("Composite", "BC");
@@ -4362,7 +4368,7 @@ public class CertTest
         }
         catch (Exception e)
         {
-            fail(dump + Strings.lineSeparator() + getName() + ": testNullDerNull failed - exception " + e.toString(), e);
+            fail(dump + Strings.lineSeparator() + getName() + ": testNullDerNull failed - exception " + e, e);
         }
         finally
         {
@@ -4789,7 +4795,7 @@ public class CertTest
 
         checkCreationEd448();
 
-        checkCreationQTESLA();
+        checkCreationSPHINCSPlus();
         checkCreationDSA();
         checkCreationECDSA();
         checkCreationRSA();
@@ -4859,9 +4865,52 @@ public class CertTest
 
     public static void main(
         String[] args)
+        throws Exception
     {
         Security.addProvider(new BouncyCastleProvider());
 
-        runTest(new CertTest());
+        //runTest(new CertTest());
+
+        PEMParser pemParser = new PEMParser(new FileReader("/tmp/bc/BCTestCerts/ee_csr.pem"));
+
+        PKCS10CertificationRequest crt = (PKCS10CertificationRequest)pemParser.readObject();
+        
+        System.err.println(crt.isSignatureValid(new JcaContentVerifierProviderBuilder().build(crt.getSubjectPublicKeyInfo())));
+
+        pemParser = new PEMParser(new FileReader("/tmp/bc/BCTestCerts/certcrl.crl"));
+
+        X509CRLHolder crl = (X509CRLHolder)pemParser.readObject();
+
+        pemParser = new PEMParser(new FileReader("/tmp/bc/BCTestCerts/bcroot.cer"));
+
+        X509CertificateHolder cert = (X509CertificateHolder)pemParser.readObject();
+        
+        System.err.println(crl.isSignatureValid(new JcaContentVerifierProviderBuilder().build(cert.getSubjectPublicKeyInfo())));
+        System.err.println(cert.isSignatureValid(new JcaContentVerifierProviderBuilder().build(cert.getSubjectPublicKeyInfo())));
+
+        pemParser = new PEMParser(new FileReader("/tmp/bc/BCTestCerts/subca_csr.pem"));
+
+        crt = (PKCS10CertificationRequest)pemParser.readObject();
+
+        System.err.println(crt.isSignatureValid(new JcaContentVerifierProviderBuilder().build(crt.getSubjectPublicKeyInfo())));
+
+        pemParser = new PEMParser(new FileReader("/tmp/bc/BCTestCerts/rsaec_priv.pem"));
+
+        PrivateKeyInfo priv = (PrivateKeyInfo)pemParser.readObject();
+
+        pemParser = new PEMParser(new FileReader("/tmp/bc/BCTestCerts/ecrsa_ee_pub.pem"));
+
+        SubjectPublicKeyInfo sub = (SubjectPublicKeyInfo)pemParser.readObject();
+           System.err.println("HERE");
+        pemParser = new PEMParser(new FileReader("/tmp/bc/BCTestCerts/bcroot.cer"));
+
+        X509CertificateHolder cacert = (X509CertificateHolder)pemParser.readObject();
+
+        pemParser = new PEMParser(new FileReader("/tmp/bc/BCTestCerts/sub_entrust_cert.cer"));
+
+        cert = (X509CertificateHolder)pemParser.readObject();
+
+        System.err.println(cert.isSignatureValid(new JcaContentVerifierProviderBuilder().build(cacert.getSubjectPublicKeyInfo())));
+
     }
 }

@@ -2,29 +2,20 @@ package org.bouncycastle.asn1;
 
 import java.io.IOException;
 
-import org.bouncycastle.util.Arrays;
-import org.bouncycastle.util.encoders.Hex;
-
 /**
  * Base class for an ASN.1 ApplicationSpecific object
+ *
+ * @deprecated Will be removed. Change application code to handle as {@link ASN1TaggedObject} only, testing
+ *             for the expected {@link ASN1TaggedObject#getTagClass() tag class} of
+ *             {@link BERTags#APPLICATION} in relevant objects before using. If using a
+ *             {@link ASN1StreamParser stream parser}, handle application-tagged objects using
+ *             {@link ASN1TaggedObjectParser} in the usual way, again testing for a
+ *             {@link ASN1TaggedObjectParser#getTagClass() tag class} of {@link BERTags#APPLICATION}.
  */
 public abstract class ASN1ApplicationSpecific
-    extends ASN1Primitive
+    extends ASN1TaggedObject
+    implements ASN1ApplicationSpecificParser
 {
-    protected final boolean   isConstructed;
-    protected final int       tag;
-    protected final byte[]    octets;
-
-    ASN1ApplicationSpecific(
-        boolean isConstructed,
-        int tag,
-        byte[] octets)
-    {
-        this.isConstructed = isConstructed;
-        this.tag = tag;
-        this.octets = Arrays.clone(octets);
-    }
-
     /**
      * Return an ASN1ApplicationSpecific from the passed in object, which may be a byte array, or null.
      *
@@ -41,7 +32,7 @@ public abstract class ASN1ApplicationSpecific
         {
             try
             {
-                return ASN1ApplicationSpecific.getInstance(ASN1Primitive.fromByteArray((byte[])obj));
+                return getInstance(ASN1Primitive.fromByteArray((byte[])obj));
             }
             catch (IOException e)
             {
@@ -52,49 +43,13 @@ public abstract class ASN1ApplicationSpecific
         throw new IllegalArgumentException("unknown object in getInstance: " + obj.getClass().getName());
     }
 
-    protected static int getLengthOfHeader(byte[] data)
+    final ASN1TaggedObject taggedObject;
+
+    ASN1ApplicationSpecific(ASN1TaggedObject taggedObject)
     {
-        int length = data[1] & 0xff; // TODO: assumes 1 byte tag
+        super(taggedObject.explicitness, checkTagClass(taggedObject.tagClass), taggedObject.tagNo, taggedObject.obj);
 
-        if (length == 0x80)
-        {
-            return 2;      // indefinite-length encoding
-        }
-
-        if (length > 127)
-        {
-            int size = length & 0x7f;
-
-            // Note: The invalid long form "0xff" (see X.690 8.1.3.5c) will be caught here
-            if (size > 4)
-            {
-                throw new IllegalStateException("DER length more than 4 bytes: " + size);
-            }
-
-            return size + 2;
-        }
-
-        return 2;
-    }
-
-    /**
-     * Return true if the object is marked as constructed, false otherwise.
-     *
-     * @return true if constructed, otherwise false.
-     */
-    public boolean isConstructed()
-    {
-        return isConstructed;
-    }
-
-    /**
-     * Return the contents of this object as a byte[]
-     *
-     * @return the encoded contents of the object.
-     */
-    public byte[] getContents()
-    {
-        return Arrays.clone(octets);
+        this.taggedObject = taggedObject;
     }
 
     /**
@@ -104,7 +59,17 @@ public abstract class ASN1ApplicationSpecific
      */
     public int getApplicationTag() 
     {
-        return tag;
+        return taggedObject.getTagNo();
+    }
+
+    /**
+     * Return the contents of this object as a byte[]
+     *
+     * @return the encoded contents of the object.
+     */
+    public byte[] getContents()
+    {
+        return taggedObject.getContents();
     }
 
     /**
@@ -113,134 +78,132 @@ public abstract class ASN1ApplicationSpecific
      * @return  the resulting object
      * @throws IOException if reconstruction fails.
      */
-    public ASN1Primitive getObject()
-        throws IOException 
+    public ASN1Primitive getEnclosedObject() throws IOException
     {
-        return ASN1Primitive.fromByteArray(getContents());
+        return taggedObject.getBaseObject().toASN1Primitive();
     }
 
     /**
      * Return the enclosed object assuming implicit tagging.
      *
-     * @param derTagNo the type tag that should be applied to the object's contents.
-     * @return  the resulting object
+     * @param tagNo the type tag that should be applied to the object's contents.
+     * @return the resulting object
      * @throws IOException if reconstruction fails.
      */
-    public ASN1Primitive getObject(int derTagNo)
-        throws IOException
+    public ASN1Primitive getObject(int tagNo) throws IOException
     {
-        if (derTagNo >= 0x1f)
-        {
-            throw new IOException("unsupported tag number");
-        }
-
-        byte[] orig = this.getEncoded();
-        byte[] tmp = replaceTagNumber(derTagNo, orig);
-
-        if ((orig[0] & BERTags.CONSTRUCTED) != 0)
-        {
-            tmp[0] |= BERTags.CONSTRUCTED;
-        }
-
-        return ASN1Primitive.fromByteArray(tmp);
+        return taggedObject.getBaseUniversal(false, tagNo);
     }
 
-    int encodedLength()
-        throws IOException
+    public ASN1Encodable getObjectParser(int tag, boolean isExplicit) throws IOException
     {
-        return StreamUtil.calculateTagLength(tag) + StreamUtil.calculateBodyLength(octets.length) + octets.length;
+        throw new ASN1Exception("this method only valid for CONTEXT_SPECIFIC tags");
     }
 
-    /* (non-Javadoc)
-     * @see org.bouncycastle.asn1.ASN1Primitive#encode(org.bouncycastle.asn1.DEROutputStream)
+    public ASN1Encodable parseBaseUniversal(boolean declaredExplicit, int baseTagNo) throws IOException
+    {
+        return taggedObject.parseBaseUniversal(declaredExplicit, baseTagNo);
+    }
+
+    public ASN1Encodable parseExplicitBaseObject() throws IOException
+    {
+        return taggedObject.parseExplicitBaseObject();
+    }
+
+    public ASN1TaggedObjectParser parseExplicitBaseTagged() throws IOException
+    {
+        return taggedObject.parseExplicitBaseTagged();
+    }
+
+    public ASN1TaggedObjectParser parseImplicitBaseTagged(int baseTagClass, int baseTagNo) throws IOException
+    {
+        return taggedObject.parseImplicitBaseTagged(baseTagClass, baseTagNo);
+    }
+
+    public boolean hasApplicationTag(int tagNo)
+    {
+        return this.tagNo == tagNo;
+    }
+
+    public boolean hasContextTag(int tagNo)
+    {
+        return false;
+    }
+
+    /**
+     * ASN1ApplicationSpecific uses an internal ASN1TaggedObject for the
+     * implementation, and will soon be deprecated in favour of using
+     * ASN1TaggedObject with a tag class of {@link BERTags#APPLICATION}. This method
+     * lets you get the internal ASN1TaggedObject so that client code can begin the
+     * migration.
      */
+    public ASN1TaggedObject getTaggedObject()
+    {
+        return taggedObject;
+    }
+
+    /**
+     * Return true if the object is marked as constructed, false otherwise.
+     *
+     * @return true if constructed, otherwise false.
+     */
+    public boolean isConstructed()
+    {
+        return taggedObject.isConstructed();
+    }
+
+    public ASN1Encodable readObject() throws IOException
+    {
+        // NOTE: No way to say you're looking for an implicitly-tagged object via ASN1ApplicationSpecificParser
+        return parseExplicitBaseObject();
+    }
+
+    boolean encodeConstructed()
+    {
+        return taggedObject.encodeConstructed();
+    }
+
+    int encodedLength(boolean withTag) throws IOException
+    {
+        return taggedObject.encodedLength(withTag);
+    }
+
     void encode(ASN1OutputStream out, boolean withTag) throws IOException
     {
-        int flags = BERTags.APPLICATION;
-        if (isConstructed)
-        {
-            flags |= BERTags.CONSTRUCTED;
-        }
-
-        out.writeEncoded(withTag, flags, tag, octets);
+        taggedObject.encode(out, withTag);
     }
 
-    boolean asn1Equals(
-        ASN1Primitive o)
+    String getASN1Encoding()
     {
-        if (!(o instanceof ASN1ApplicationSpecific))
-        {
-            return false;
-        }
-
-        ASN1ApplicationSpecific other = (ASN1ApplicationSpecific)o;
-
-        return isConstructed == other.isConstructed
-            && tag == other.tag
-            && Arrays.areEqual(octets, other.octets);
+        return taggedObject.getASN1Encoding();
     }
 
-    public int hashCode()
+    ASN1Sequence rebuildConstructed(ASN1Primitive primitive)
     {
-        return (isConstructed ? 1 : 0) ^ tag ^ Arrays.hashCode(octets);
+        return taggedObject.rebuildConstructed(primitive);
     }
 
-    private byte[] replaceTagNumber(int newTag, byte[] input)
-        throws IOException
+    ASN1TaggedObject replaceTag(int tagClass, int tagNo)
     {
-        int tagNo = input[0] & 0x1f;
-        int index = 1;
-        //
-        // with tagged object tag number is bottom 5 bits, or stored at the start of the content
-        //
-        if (tagNo == 0x1f)
-        {
-            int b = input[index++] & 0xff;
-
-            // X.690-0207 8.1.2.4.2
-            // "c) bits 7 to 1 of the first subsequent octet shall not all be zero."
-            if ((b & 0x7f) == 0) // Note: -1 will pass
-            {
-                throw new IOException("corrupted stream - invalid high tag number found");
-            }
-
-            while ((b & 0x80) != 0)
-            {
-                b = input[index++] & 0xff;
-            }
-        }
-
-        byte[] tmp = new byte[input.length - index + 1];
-
-        System.arraycopy(input, index, tmp, 1, tmp.length - 1);
-
-        tmp[0] = (byte)newTag;
-
-        return tmp;
+        return taggedObject.replaceTag(tagClass, tagNo);
     }
 
-    public String toString()
+    ASN1Primitive toDERObject()
     {
-        StringBuffer sb = new StringBuffer();
-        sb.append("[");
-        if (isConstructed())
+        return new DERApplicationSpecific((ASN1TaggedObject)taggedObject.toDERObject());
+    }
+
+    ASN1Primitive toDLObject()
+    {
+        return new DLApplicationSpecific((ASN1TaggedObject)taggedObject.toDLObject());
+    }
+
+    private static int checkTagClass(int tagClass)
+    {
+        if (BERTags.APPLICATION != tagClass)
         {
-            sb.append("CONSTRUCTED ");
+            throw new IllegalArgumentException();
         }
-        sb.append("APPLICATION ");
-        sb.append(Integer.toString(getApplicationTag()));
-        sb.append("]");
-        // @todo content encoding somehow?
-        if (this.octets != null)
-        {
-            sb.append(" #");
-            sb.append(Hex.toHexString(this.octets));
-        }
-        else
-        {
-            sb.append(" #null");
-        }
-        sb.append(" ");
-        return sb.toString();
+        return tagClass;
     }
 }

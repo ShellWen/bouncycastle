@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Set;
 import org.bouncycastle.asn1.cms.AttributeTable;
 import org.bouncycastle.asn1.cms.AuthEnvelopedData;
@@ -60,18 +61,24 @@ public class CMSAuthEnvelopedData
         final EncryptedContentInfo authEncInfo = authEnvData.getAuthEncryptedContentInfo();
         this.authEncAlg = authEncInfo.getContentEncryptionAlgorithm();
 
+        this.mac = authEnvData.getMac().getOctets();
+
         CMSSecureReadable secureReadable = new CMSSecureReadable()
         {
+            public ASN1ObjectIdentifier getContentType()
+            {
+                return authEncInfo.getContentType();
+            }
 
             public InputStream getInputStream()
                 throws IOException, CMSException
             {
-                return new ByteArrayInputStream(authEncInfo.getEncryptedContent().getOctets());
+                return new ByteArrayInputStream(Arrays.concatenate(authEncInfo.getEncryptedContent().getOctets(), mac));
             }
         };
 
         this.authAttrs = authEnvData.getAuthAttrs();
-        this.mac = authEnvData.getMac().getOctets();
+
         this.unauthAttrs = authEnvData.getUnauthAttrs();
 
         //

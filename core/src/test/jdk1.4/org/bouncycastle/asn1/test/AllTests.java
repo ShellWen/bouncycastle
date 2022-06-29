@@ -34,8 +34,6 @@ public class AllTests
         
         suite.addTestSuite(AllTests.class);
         suite.addTestSuite(ASN1SequenceParserTest.class);
-        suite.addTestSuite(OctetStringTest.class);
-        suite.addTestSuite(ParseTest.class);
         
         return suite;
     }

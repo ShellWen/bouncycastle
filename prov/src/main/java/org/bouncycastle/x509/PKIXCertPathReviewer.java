@@ -38,6 +38,7 @@ import javax.security.auth.x500.X500Principal;
 
 import org.bouncycastle.asn1.ASN1Encodable;
 import org.bouncycastle.asn1.ASN1Enumerated;
+import org.bouncycastle.asn1.ASN1IA5String;
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1Integer;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
@@ -45,7 +46,6 @@ import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.ASN1TaggedObject;
-import org.bouncycastle.asn1.DERIA5String;
 import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.x509.AccessDescription;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
@@ -710,6 +710,7 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
         try
         {
             X509Certificate cert = (X509Certificate) certs.get(certs.size() - 1);
+
             Collection trustColl = getTrustAnchors(cert,pkixParams.getTrustAnchors());
             if (trustColl.size() > 1)
             {
@@ -740,6 +741,7 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
                 {
                     trustPublicKey = trust.getCAPublicKey();
                 }
+
                 try
                 {
                     CertPathValidatorUtilities.verifyX509Certificate(cert, trustPublicKey,
@@ -812,7 +814,7 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
         AlgorithmIdentifier workingAlgId = null;
         ASN1ObjectIdentifier workingPublicKeyAlgorithm = null;
         ASN1Encodable workingPublicKeyParameters = null;
-        
+
         if (trust != null)
         {
             sign = trust.getTrustedCert();
@@ -838,7 +840,6 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
                 addError(msg);
                 workingAlgId = null;
             }
-            
         }
 
         // Basic cert checks
@@ -860,7 +861,6 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
             // first time from the TrustAnchor
             //
             cert = (X509Certificate) certs.get(index);
-
             // verify signature
             if (workingPublicKey != null)
             {
@@ -1842,7 +1842,7 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
             }
             
             //
-            // process critical extesions for each certificate
+            // process critical extensions for each certificate
             //
             
             X509Certificate cert = null;
@@ -1869,7 +1869,11 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
                 criticalExtensions.remove(BASIC_CONSTRAINTS);
                 criticalExtensions.remove(SUBJECT_ALTERNATIVE_NAME);
                 criticalExtensions.remove(NAME_CONSTRAINTS);
-                
+
+                if (index == 0)     // EE certificate
+                {
+                    criticalExtensions.remove(Extension.extendedKeyUsage.getId());
+                }
                 // process qcStatements extension
                 if (criticalExtensions.contains(QC_STATEMENT))
                 {
@@ -2087,7 +2091,7 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
             Date nextUpdate = crl.getNextUpdate();
             Object[] arguments = new Object[]{ new TrustedInput(thisUpdate), new TrustedInput(nextUpdate) };
 
-            if (nextUpdate == null || validDate.before(crl.getNextUpdate()))
+            if (nextUpdate == null || validDate.before(nextUpdate))
             {
                 validCrlFound = true;
                 ErrorBundle msg = new ErrorBundle(RESOURCE_NAME, "CertPathReviewer.localValidCRL", arguments);
@@ -2395,7 +2399,7 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
                     {
                         if (generalNames[j].getTagNo() == GeneralName.uniformResourceIdentifier)
                         {
-                            String url = ((DERIA5String) generalNames[j].getName()).getString();
+                            String url = ((ASN1IA5String)generalNames[j].getName()).getString();
                             urls.add(url);
                         }
                     }
@@ -2419,7 +2423,7 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
                     GeneralName name = ads[i].getAccessLocation();
                     if (name.getTagNo() == GeneralName.uniformResourceIdentifier)
                     {
-                        String url = ((DERIA5String) name.getName()).getString();
+                        String url = ((ASN1IA5String)name.getName()).getString();
                         urls.add(url);
                     }
                 }
@@ -2482,11 +2486,19 @@ public class PKIXCertPathReviewer extends CertPathValidatorUtilities
                 ASN1OctetString oct = (ASN1OctetString)ASN1Primitive.fromByteArray(ext);
                 AuthorityKeyIdentifier authID = AuthorityKeyIdentifier.getInstance(ASN1Primitive.fromByteArray(oct.getOctets()));
 
-                certSelectX509.setSerialNumber(authID.getAuthorityCertSerialNumber());
-                byte[] keyID = authID.getKeyIdentifier();
-                if (keyID != null)
+                // we ignore key identifier as if set, selector expects parent to have subjectKeyID
+                BigInteger serial = authID.getAuthorityCertSerialNumber();
+                if (serial != null)
                 {
-                    certSelectX509.setSubjectKeyIdentifier(new DEROctetString(keyID).getEncoded());
+                    certSelectX509.setSerialNumber(authID.getAuthorityCertSerialNumber());
+                }
+                else
+                {
+                    byte[] keyID = authID.getKeyIdentifier();
+                    if (keyID != null)
+                    {
+                        certSelectX509.setSubjectKeyIdentifier(new DEROctetString(keyID).getEncoded());
+                    }
                 }
             }
         }

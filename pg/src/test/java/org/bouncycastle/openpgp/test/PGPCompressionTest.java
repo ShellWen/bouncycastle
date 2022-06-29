@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.security.SecureRandom;
 import java.security.Security;
 
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
@@ -20,10 +21,14 @@ public class PGPCompressionTest
     public void performTest()
         throws Exception
     {
-        testCompression(PGPCompressedData.UNCOMPRESSED);
-        testCompression(PGPCompressedData.ZIP);
-        testCompression(PGPCompressedData.ZLIB);
-        testCompression(PGPCompressedData.BZIP2);
+        testCompression(new byte[0]);
+        testCompression("hello world!".getBytes());
+
+        SecureRandom random = new SecureRandom();
+        byte[] randomData = new byte[1000000];
+        random.nextBytes(randomData);
+
+        testCompression(randomData);
 
         //
         // new style - using stream close
@@ -97,8 +102,16 @@ public class PGPCompressionTest
         }
     }
 
-    private void testCompression(
-        int type)
+    private void testCompression(byte[] data)
+        throws IOException, PGPException
+    {
+        testCompression(data, PGPCompressedData.UNCOMPRESSED);
+        testCompression(data, PGPCompressedData.ZIP);
+        testCompression(data, PGPCompressedData.ZLIB);
+        testCompression(data, PGPCompressedData.BZIP2);
+    }
+
+    private void testCompression(byte[] data, int type)
         throws IOException, PGPException
     {
         ByteArrayOutputStream bOut = new ByteArrayOutputStream();
@@ -106,7 +119,7 @@ public class PGPCompressionTest
 
         OutputStream out = cPacket.open(new UncloseableOutputStream(bOut));
 
-        out.write("hello world!".getBytes());
+        out.write(data);
 
         out.close();
 
@@ -122,7 +135,7 @@ public class PGPCompressionTest
             bOut.write(ch);
         }
 
-        if (!areEqual(bOut.toByteArray(), "hello world!".getBytes()))
+        if (!areEqual(bOut.toByteArray(), data))
         {
             fail("compression test failed");
         }

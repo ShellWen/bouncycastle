@@ -6,6 +6,12 @@ buildscript {
   }
 }
 
+plugins {
+  id "io.spring.nohttp" version "0.0.8"
+  id "checkstyle"
+  id "jacoco"
+}
+
 if (JavaVersion.current().isJava8Compatible())
 {
   allprojects {
@@ -15,17 +21,24 @@ if (JavaVersion.current().isJava8Compatible())
   }
 }
 
+// this needs to go here, otherwise it can't find config
+apply plugin: 'io.spring.nohttp'
+
 allprojects {
   apply plugin: 'java'
   apply plugin: 'idea'
+  apply plugin: 'checkstyle'
+  apply plugin: 'jacoco'
 
   repositories {
     mavenCentral()
   }
 
   dependencies {
-    testCompile group: 'junit', name: 'junit', version: '4.11'
+    testImplementation group: 'junit', name: 'junit', version: '4.11'
   }
+
+
 }
 
 ext {
@@ -39,30 +52,71 @@ task printProperties {
 }
 
 subprojects {
+  apply plugin: 'eclipse'
 
   JavaVersion current = JavaVersion.current();
   if (current.compareTo(JavaVersion.VERSION_1_8) <= 0)
   {
-      ext.vmrange='jdk15to18'
-      sourceCompatibility = 1.5
-      targetCompatibility = 1.5
+    ext.vmrange = 'jdk15to18'
+    sourceCompatibility = 1.5
+    targetCompatibility = 1.5
   }
   else
   {
-      ext.vmrange='jdk18on'
-      sourceCompatibility = 1.8
-      targetCompatibility = 1.8
+    ext.vmrange = 'jdk18on'
+    sourceCompatibility = 1.8
+    targetCompatibility = 1.8
   }
 
-  version = '1.67'
+  version = '1.70'
 
-  test {
+ task testFull(type:Test) {
+    systemProperties = [
+            'bc.test.data.home': bcTestDataHome,
+            'test.full':'true'
+    ]
     systemProperty 'bc.test.data.home', bcTestDataHome
+    maxHeapSize = "1536m"
+
+    finalizedBy jacocoTestReport
 
     filter {
       includeTestsMatching "AllTest*"
     }
   }
+
+  test {
+    systemProperty 'bc.test.data.home', bcTestDataHome
+    maxHeapSize = "1536m"
+
+    finalizedBy jacocoTestReport
+
+    filter {
+      includeTestsMatching "AllTest*"
+    }
+  }
+
+
+  dependencies {
+    checkstyle files("$rootDir/config/checkstyle/lib/methodchecker.jar")
+    checkstyle 'com.puppycrawl.tools:checkstyle:9.0'
+  }
+
+  checkstyle {
+    configFile file("$rootDir/config/checkstyle/checkstyle.xml");
+    toolVersion '9.0'; // your choice here
+    sourceSets = [project.sourceSets.main]
+  }
+
+
+  jacocoTestReport {
+    dependsOn test // tests are required to run before generating the report
+  }
+
+  jacoco {
+    reportsDirectory =  layout.buildDirectory.dir("jacoco")
+  }
+
 }
 
 test.dependsOn([':core:test', ':prov:test', ':pkix:test', ':mail:test', 'pg:test', ':tls:test'])

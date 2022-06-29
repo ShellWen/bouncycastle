@@ -10,12 +10,11 @@ import org.bouncycastle.tls.AlertDescription;
 import org.bouncycastle.tls.AlertLevel;
 import org.bouncycastle.tls.BasicTlsPSKIdentity;
 import org.bouncycastle.tls.ChannelBinding;
-import org.bouncycastle.tls.MaxFragmentLength;
 import org.bouncycastle.tls.PSKTlsClient;
+import org.bouncycastle.tls.ProtocolName;
 import org.bouncycastle.tls.ProtocolVersion;
 import org.bouncycastle.tls.ServerOnlyTlsAuthentication;
 import org.bouncycastle.tls.TlsAuthentication;
-import org.bouncycastle.tls.TlsExtensionsUtils;
 import org.bouncycastle.tls.TlsFatalAlert;
 import org.bouncycastle.tls.TlsPSKIdentity;
 import org.bouncycastle.tls.TlsServerCertificate;
@@ -103,10 +102,7 @@ class MockPSKDTLSClient
                     throw new TlsFatalAlert(AlertDescription.bad_certificate);
                 }
 
-                String[] trustedCertResources = new String[]{ "x509-server-dsa.pem", "x509-server-ecdh.pem",
-                    "x509-server-ecdsa.pem", "x509-server-ed25519.pem", "x509-server-ed448.pem",
-                    "x509-server-rsa_pss_256.pem", "x509-server-rsa_pss_384.pem", "x509-server-rsa_pss_512.pem",
-                    "x509-server-rsa-enc.pem", "x509-server-rsa-sign.pem" };
+                String[] trustedCertResources = new String[] { "x509-server-rsa-enc.pem" };
 
                 TlsCertificate[] certPath = TlsTestUtils.getTrustedCertPath(context.getCrypto(), chain[0],
                     trustedCertResources);
@@ -125,13 +121,19 @@ class MockPSKDTLSClient
     {
         super.notifyHandshakeComplete();
 
+        ProtocolName protocolName = context.getSecurityParametersConnection().getApplicationProtocol();
+        if (protocolName != null)
+        {
+            System.out.println("Client ALPN: " + protocolName.getUtf8Decoding());
+        }
+
         TlsSession newSession = context.getSession();
         if (newSession != null)
         {
             if (newSession.isResumable())
             {
                 byte[] newSessionID = newSession.getSessionID();
-                String hex = Hex.toHexString(newSessionID);
+                String hex = hex(newSessionID);
 
                 if (this.session != null && Arrays.areEqual(this.session.getSessionID(), newSessionID))
                 {
@@ -154,6 +156,26 @@ class MockPSKDTLSClient
             byte[] tlsUnique = context.exportChannelBinding(ChannelBinding.tls_unique);
             System.out.println("Client 'tls-unique': " + hex(tlsUnique));
         }
+    }
+
+    public Hashtable getClientExtensions() throws IOException
+    {
+        if (context.getSecurityParametersHandshake().getClientRandom() == null)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
+
+        return super.getClientExtensions();
+    }
+
+    public void processServerExtensions(Hashtable serverExtensions) throws IOException
+    {
+        if (context.getSecurityParametersHandshake().getServerRandom() == null)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
+
+        super.processServerExtensions(serverExtensions);
     }
 
     protected String hex(byte[] data)

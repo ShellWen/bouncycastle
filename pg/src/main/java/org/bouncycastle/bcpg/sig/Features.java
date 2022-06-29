@@ -6,9 +6,20 @@ import org.bouncycastle.bcpg.SignatureSubpacketTags;
 public class Features
     extends SignatureSubpacket
 {
-
-    /** Identifier for the modification detection feature */
-    public static final byte FEATURE_MODIFICATION_DETECTION = 1;
+    /**
+     * Identifier for the Modification Detection (packets 18 and 19)
+     */
+    public static final byte FEATURE_MODIFICATION_DETECTION = 0x01;
+    /**
+     * Identifier for the AEAD Encrypted Data Packet (packet 20) and version 5
+     * Symmetric-Key Encrypted Session Key Packets (packet 3)
+     */
+    public static final byte FEATURE_AEAD_ENCRYPTED_DATA = 0x02;
+    /**
+     * Identifier for the Version 5 Public-Key Packet format and corresponding new
+     * fingerprint format
+     */
+    public static final byte FEATURE_VERSION_5_PUBLIC_KEY = 0x04;
 
     private static final byte[] featureToByteArray(byte feature)
     {
@@ -18,16 +29,26 @@ public class Features
     }
 
     public Features(
-        boolean    critical,
-        boolean    isLongLength,
-        byte[]     data)
+        boolean critical,
+        boolean isLongLength,
+        byte[] data)
     {
         super(SignatureSubpacketTags.FEATURES, critical, isLongLength, data);
     }
 
-    public Features(boolean critical, byte feature)
+    public Features(boolean critical, byte features)
     {
-        super(SignatureSubpacketTags.FEATURES, critical, false, featureToByteArray(feature));
+        super(SignatureSubpacketTags.FEATURES, critical, false, featureToByteArray(features));
+    }
+
+    public Features(boolean critical, int features)
+    {
+        super(SignatureSubpacketTags.FEATURES, critical, false, featureToByteArray((byte)features));
+    }
+
+    public byte getFeatures()
+    {
+        return data[0];
     }
 
     /**
@@ -43,49 +64,6 @@ public class Features
      */
     public boolean supportsFeature(byte feature)
     {
-        for (int i = 0; i < data.length; i++)
-        {
-            if (data[i] == feature)
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-
-    /**
-     * Sets support for a particular feature.
-     */
-    private void setSupportsFeature(byte feature, boolean support)
-    {
-        if (feature == 0)
-        {
-            throw new IllegalArgumentException("feature == 0");
-        }
-        if (supportsFeature(feature) != support)
-        {
-            if (support == true)
-            {
-                byte[] temp = new byte[data.length + 1];
-                System.arraycopy(data, 0, temp, 0, data.length);
-                temp[data.length] = feature;
-                data = temp;
-            }
-            else
-            {
-                for (int i = 0; i < data.length; i++)
-                {
-                    if (data[i] == feature)
-                    {
-                        byte[] temp = new byte[data.length - 1];
-                        System.arraycopy(data, 0, temp, 0, i);
-                        System.arraycopy(data, i + 1, temp, i, temp.length - i);
-                        data = temp;
-                        break;
-                    }
-                }
-            }
-        }
+        return (data[0] & feature) != 0;
     }
 }

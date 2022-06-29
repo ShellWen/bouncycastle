@@ -8,6 +8,7 @@ import java.util.Iterator;
 import java.util.List;
 
 import org.bouncycastle.bcpg.BCPGInputStream;
+import org.bouncycastle.bcpg.MarkerPacket;
 import org.bouncycastle.bcpg.Packet;
 import org.bouncycastle.bcpg.PacketTags;
 import org.bouncycastle.bcpg.SignaturePacket;
@@ -38,9 +39,9 @@ public abstract class PGPKeyRing
         BCPGInputStream pIn)
         throws IOException
     {
-        return (pIn.nextPacketTag() == PacketTags.TRUST)
-            ?   (TrustPacket)pIn.readPacket()
-            :   null;
+        int tag = pIn.skipMarkerPackets();
+
+        return tag == PacketTags.TRUST ? (TrustPacket)pIn.readPacket() : null;
     }
 
     static List readSignaturesAndTrust(
@@ -51,7 +52,7 @@ public abstract class PGPKeyRing
         {
             List sigList = new ArrayList();
 
-            while (pIn.nextPacketTag() == PacketTags.SIGNATURE)
+            while (pIn.skipMarkerPackets() == PacketTags.SIGNATURE)
             {
                 SignaturePacket signaturePacket = (SignaturePacket)pIn.readPacket();
                 TrustPacket trustPacket = readOptionalTrustPacket(pIn);
@@ -75,8 +76,7 @@ public abstract class PGPKeyRing
         List idSigs)
         throws IOException
     {
-        while (pIn.nextPacketTag() == PacketTags.USER_ID
-            || pIn.nextPacketTag() == PacketTags.USER_ATTRIBUTE)
+        while (isUserTag(pIn.skipMarkerPackets()))
         {
             Packet obj = pIn.readPacket();
             if (obj instanceof UserIDPacket)
@@ -141,4 +141,15 @@ public abstract class PGPKeyRing
     public abstract byte[] getEncoded()
         throws IOException;
 
+    private static boolean isUserTag(int tag)
+    {
+        switch (tag)
+        {
+            case PacketTags.USER_ATTRIBUTE:
+            case PacketTags.USER_ID:
+                return true;
+            default:
+                return false;
+        }
+    }
 }

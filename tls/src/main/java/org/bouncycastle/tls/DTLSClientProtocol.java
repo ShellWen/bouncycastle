@@ -168,6 +168,11 @@ public class DTLSClientProtocol
                 securityParameters.tlsUnique = securityParameters.getPeerVerifyData();
             }
 
+            securityParameters.localCertificate = state.sessionParameters.getLocalCertificate();
+            securityParameters.peerCertificate = state.sessionParameters.getPeerCertificate();
+            securityParameters.pskIdentity = state.sessionParameters.getPSKIdentity();
+            securityParameters.srpIdentity = state.sessionParameters.getSRPIdentity();
+
             state.clientContext.handshakeComplete(state.client, state.tlsSession);
 
             recordLayer.initHeartbeat(state.heartbeat, HeartbeatMode.peer_allowed_to_send == state.heartbeatPolicy);
@@ -176,10 +181,7 @@ public class DTLSClientProtocol
         }
 
         invalidateSession(state);
-
         state.tlsSession = TlsUtils.importSession(securityParameters.getSessionID(), null);
-        state.sessionParameters = null;
-        state.sessionMasterSecret = null;
 
         serverMessage = handshake.receiveMessage();
 
@@ -241,12 +243,6 @@ public class DTLSClientProtocol
 
             TlsUtils.establishServerSigAlgs(securityParameters, state.certificateRequest);
 
-            /*
-             * TODO Give the client a chance to immediately select the CertificateVerify hash
-             * algorithm here to avoid tracking the other hash algorithms unnecessarily?
-             */
-            TlsUtils.trackHashAlgorithms(handshake.getHandshakeHash(), securityParameters.getServerSigAlgs());
-
             serverMessage = handshake.receiveMessage();
         }
         else
@@ -266,6 +262,56 @@ public class DTLSClientProtocol
             throw new TlsFatalAlert(AlertDescription.unexpected_message);
         }
 
+        TlsCredentials clientAuthCredentials = null;
+        TlsCredentialedSigner clientAuthSigner = null;
+        Certificate clientAuthCertificate = null;
+        SignatureAndHashAlgorithm clientAuthAlgorithm = null;
+        TlsStreamSigner clientAuthStreamSigner = null;
+
+        if (state.certificateRequest != null)
+        {
+            clientAuthCredentials = TlsUtils.establishClientCredentials(state.authentication, state.certificateRequest);
+            if (clientAuthCredentials != null)
+            {
+                clientAuthCertificate = clientAuthCredentials.getCertificate();
+
+                if (clientAuthCredentials instanceof TlsCredentialedSigner)
+                {
+                    clientAuthSigner = (TlsCredentialedSigner)clientAuthCredentials;
+                    clientAuthAlgorithm = TlsUtils.getSignatureAndHashAlgorithm(
+                        securityParameters.getNegotiatedVersion(), clientAuthSigner);
+                    clientAuthStreamSigner = clientAuthSigner.getStreamSigner();
+
+                    if (ProtocolVersion.DTLSv12.equals(securityParameters.getNegotiatedVersion()))
+                    {
+                        TlsUtils.verifySupportedSignatureAlgorithm(securityParameters.getServerSigAlgs(),
+                            clientAuthAlgorithm, AlertDescription.internal_error);
+
+                        if (clientAuthStreamSigner == null)
+                        {
+                            TlsUtils.trackHashAlgorithmClient(handshake.getHandshakeHash(), clientAuthAlgorithm);
+                        }
+                    }
+
+                    if (clientAuthStreamSigner != null)
+                    {
+                        handshake.getHandshakeHash().forceBuffering();
+                    }
+                }
+            }
+        }
+
+        handshake.getHandshakeHash().sealHashAlgorithms();
+
+        if (clientAuthCredentials == null)
+        {
+            state.keyExchange.skipClientCredentials();
+        }
+        else
+        {
+            state.keyExchange.processClientCredentials(clientAuthCredentials);                    
+        }
+
         Vector clientSupplementalData = state.client.getClientSupplementalData();
         if (clientSupplementalData != null)
         {
@@ -275,45 +321,8 @@ public class DTLSClientProtocol
 
         if (null != state.certificateRequest)
         {
-            state.clientCredentials = TlsUtils.establishClientCredentials(state.authentication,
-                state.certificateRequest);
-
-            /*
-             * RFC 5246 If no suitable certificate is available, the client MUST send a certificate
-             * message containing no certificates.
-             * 
-             * NOTE: In previous RFCs, this was SHOULD instead of MUST.
-             */
-
-            Certificate clientCertificate = null;
-            if (null != state.clientCredentials)
-            {
-                clientCertificate = state.clientCredentials.getCertificate();
-            }
-
-            sendCertificateMessage(state.clientContext, handshake, clientCertificate, null);
+            sendCertificateMessage(state.clientContext, handshake, clientAuthCertificate, null);
         }
-
-        TlsCredentialedSigner credentialedSigner = null;
-        TlsStreamSigner streamSigner = null;
-
-        if (null != state.clientCredentials)
-        {
-            state.keyExchange.processClientCredentials(state.clientCredentials);
-            
-            if (state.clientCredentials instanceof TlsCredentialedSigner)
-            {
-                credentialedSigner = (TlsCredentialedSigner)state.clientCredentials;
-                streamSigner = credentialedSigner.getStreamSigner();
-            }
-        }
-        else
-        {
-            state.keyExchange.skipClientCredentials();
-        }
-
-        boolean forceBuffering = streamSigner != null;
-        TlsUtils.sealHandshakeHash(state.clientContext, handshake.getHandshakeHash(), forceBuffering);
 
         byte[] clientKeyExchangeBody = generateClientKeyExchange(state);
         handshake.sendMessage(HandshakeType.client_key_exchange, clientKeyExchangeBody);
@@ -323,17 +332,15 @@ public class DTLSClientProtocol
         TlsProtocol.establishMasterSecret(state.clientContext, state.keyExchange);
         recordLayer.initPendingEpoch(TlsUtils.initCipher(state.clientContext));
 
+        if (clientAuthSigner != null)
         {
-            if (credentialedSigner != null)
-            {
-                DigitallySigned certificateVerify = TlsUtils.generateCertificateVerifyClient(state.clientContext,
-                    credentialedSigner, streamSigner, handshake.getHandshakeHash());
-                byte[] certificateVerifyBody = generateCertificateVerify(state, certificateVerify);
-                handshake.sendMessage(HandshakeType.certificate_verify, certificateVerifyBody);
-            }
-
-            handshake.prepareToFinish();
+            DigitallySigned certificateVerify = TlsUtils.generateCertificateVerifyClient(state.clientContext,
+                clientAuthSigner, clientAuthAlgorithm, clientAuthStreamSigner, handshake.getHandshakeHash());
+            byte[] certificateVerifyBody = generateCertificateVerify(state, certificateVerify);
+            handshake.sendMessage(HandshakeType.certificate_verify, certificateVerifyBody);
         }
+
+        handshake.prepareToFinish();
 
         securityParameters.localVerifyData = TlsUtils.calculateVerifyData(state.clientContext,
             handshake.getHandshakeHash(), false);
@@ -344,6 +351,14 @@ public class DTLSClientProtocol
             serverMessage = handshake.receiveMessage();
             if (serverMessage.getType() == HandshakeType.new_session_ticket)
             {
+                /*
+                 * RFC 5077 3.4. If the client receives a session ticket from the server, then it
+                 * discards any Session ID that was sent in the ServerHello.
+                 */
+                securityParameters.sessionID = TlsUtils.EMPTY_BYTES;
+                invalidateSession(state);
+                state.tlsSession = TlsUtils.importSession(securityParameters.getSessionID(), null);
+
                 processNewSessionTicket(state, serverMessage.getBody());
             }
             else
@@ -375,7 +390,7 @@ public class DTLSClientProtocol
             .setServerExtensions(state.serverExtensions)
             .build();
 
-        state.tlsSession = TlsUtils.importSession(state.tlsSession.getSessionID(), state.sessionParameters);
+        state.tlsSession = TlsUtils.importSession(securityParameters.getSessionID(), state.sessionParameters);
 
         securityParameters.tlsUnique = securityParameters.getLocalVerifyData();
 
@@ -409,6 +424,13 @@ public class DTLSClientProtocol
         }
 
         context.setClientVersion(client_version);
+
+        {
+            boolean useGMTUnixTime = ProtocolVersion.DTLSv12.isEqualOrLaterVersionOf(client_version)
+                && state.client.shouldUseGMTUnixTime();
+
+            securityParameters.clientRandom = TlsProtocol.createRandomBlock(useGMTUnixTime, state.clientContext);
+        }
 
         byte[] session_id = TlsUtils.getSessionID(state.tlsSession);
 
@@ -447,7 +469,8 @@ public class DTLSClientProtocol
 
         securityParameters.clientSupportedGroups = TlsExtensionsUtils.getSupportedGroupsExtension(state.clientExtensions);
 
-        state.clientAgreements = TlsUtils.addEarlyKeySharesToClientHello(state.clientContext, state.client, state.clientExtensions);
+        state.clientAgreements = TlsUtils.addKeyShareToClientHello(state.clientContext, state.client,
+            state.clientExtensions);
 
         if (TlsUtils.isExtendedMasterSecretOptionalDTLS(context.getClientSupportedVersions())
             && state.client.shouldUseExtendedMasterSecret())
@@ -458,13 +481,6 @@ public class DTLSClientProtocol
             && state.client.requiresExtendedMasterSecret())
         {
             throw new TlsFatalAlert(AlertDescription.internal_error);
-        }
-
-        {
-            boolean useGMTUnixTime = ProtocolVersion.DTLSv12.isEqualOrLaterVersionOf(client_version)
-                && state.client.shouldUseGMTUnixTime();
-
-            securityParameters.clientRandom = TlsProtocol.createRandomBlock(useGMTUnixTime, state.clientContext);
         }
 
         // Cipher Suites (and SCSV)
@@ -509,7 +525,7 @@ public class DTLSClientProtocol
 
 
         ClientHello clientHello = new ClientHello(legacy_version, securityParameters.getClientRandom(), session_id,
-            TlsUtils.EMPTY_BYTES, state.offeredCipherSuites, state.clientExtensions);
+            TlsUtils.EMPTY_BYTES, state.offeredCipherSuites, state.clientExtensions, 0);
 
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
         clientHello.encode(state.clientContext, buf);
@@ -975,7 +991,6 @@ public class DTLSClientProtocol
         TlsAuthentication authentication = null;
         CertificateStatus certificateStatus = null;
         CertificateRequest certificateRequest = null;
-        TlsCredentials clientCredentials = null;
         TlsHeartbeat heartbeat = null;
         short heartbeatPolicy = HeartbeatMode.peer_not_allowed_to_send;
     }

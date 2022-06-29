@@ -2,6 +2,7 @@ package org.bouncycastle.operator;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.bsi.BSIObjectIdentifiers;
@@ -133,6 +134,15 @@ public class DefaultAlgorithmNameFinder
         algorithms.put(GNUObjectIdentifiers.Serpent_256_CBC, "Serpent-256/CBC");
         algorithms.put(GNUObjectIdentifiers.Serpent_256_CFB, "Serpent-256/CFB");
         algorithms.put(GNUObjectIdentifiers.Serpent_256_OFB, "Serpent-256/OFB");
+        algorithms.put(MiscObjectIdentifiers.id_blake2b160, "BLAKE2b-160");
+        algorithms.put(MiscObjectIdentifiers.id_blake2b256, "BLAKE2b-256");
+        algorithms.put(MiscObjectIdentifiers.id_blake2b384, "BLAKE2b-384");
+        algorithms.put(MiscObjectIdentifiers.id_blake2b512, "BLAKE2b-512");
+        algorithms.put(MiscObjectIdentifiers.id_blake2s128, "BLAKE2s-128");
+        algorithms.put(MiscObjectIdentifiers.id_blake2s160, "BLAKE2s-160");
+        algorithms.put(MiscObjectIdentifiers.id_blake2s224, "BLAKE2s-224");
+        algorithms.put(MiscObjectIdentifiers.id_blake2s256, "BLAKE2s-256");
+        algorithms.put(MiscObjectIdentifiers.blake3_256, "BLAKE3-256");
     }
 
     public boolean hasAlgorithmName(ASN1ObjectIdentifier objectIdentifier)
@@ -151,5 +161,10 @@ public class DefaultAlgorithmNameFinder
     {
         // TODO: take into account PSS/OAEP params
         return getAlgorithmName(algorithmIdentifier.getAlgorithm());
+    }
+
+    public Set<ASN1ObjectIdentifier> getOIDSet()
+    {
+        return algorithms.keySet();
     }
 }

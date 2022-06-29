@@ -20,6 +20,7 @@ public class TlsExtensionsUtils
     public static final Integer EXT_certificate_authorities = Integers.valueOf(ExtensionType.certificate_authorities);
     public static final Integer EXT_client_certificate_type = Integers.valueOf(ExtensionType.client_certificate_type);
     public static final Integer EXT_client_certificate_url = Integers.valueOf(ExtensionType.client_certificate_url);
+    public static final Integer EXT_compress_certificate = Integers.valueOf(ExtensionType.compress_certificate);
     public static final Integer EXT_cookie = Integers.valueOf(ExtensionType.cookie);
     public static final Integer EXT_early_data = Integers.valueOf(ExtensionType.early_data);
     public static final Integer EXT_ec_point_formats = Integers.valueOf(ExtensionType.ec_point_formats);
@@ -83,6 +84,11 @@ public class TlsExtensionsUtils
     public static void addClientCertificateURLExtension(Hashtable extensions)
     {
         extensions.put(EXT_client_certificate_url, createClientCertificateURLExtension());
+    }
+
+    public static void addCompressCertificateExtension(Hashtable extensions, int[] algorithms) throws IOException
+    {
+        extensions.put(EXT_compress_certificate, createCompressCertificateExtension(algorithms));
     }
 
     public static void addCookieExtension(Hashtable extensions, byte[] cookie) throws IOException
@@ -303,6 +309,13 @@ public class TlsExtensionsUtils
     {
         byte[] extensionData = TlsUtils.getExtensionData(extensions, EXT_client_certificate_type);
         return extensionData == null ? -1 : readCertificateTypeExtensionServer(extensionData);
+    }
+
+    public static int[] getCompressCertificateExtension(Hashtable extensions)
+        throws IOException
+    {
+        byte[] extensionData = TlsUtils.getExtensionData(extensions, EXT_compress_certificate);
+        return extensionData == null ? null : readCompressCertificateExtension(extensionData);
     }
 
     public static byte[] getCookieExtension(Hashtable extensions)
@@ -546,11 +559,7 @@ public class TlsExtensionsUtils
             protocolName.encode(buf);
         }
 
-        int length = buf.size() - 2;
-        TlsUtils.checkUint16(length);
-        byte[] extensionData = buf.toByteArray();
-        TlsUtils.writeUint16(length, extensionData, 0);
-        return extensionData;
+        return patchOpaque16(buf);
     }
 
     public static byte[] createALPNExtensionServer(ProtocolName protocolName) throws IOException
@@ -580,16 +589,12 @@ public class TlsExtensionsUtils
             TlsUtils.writeOpaque16(derEncoding, buf);
         }
 
-        int length = buf.size() - 2;
-        TlsUtils.checkUint16(length);
-        byte[] extensionData = buf.toByteArray();
-        TlsUtils.writeUint16(length, extensionData, 0);
-        return extensionData;
+        return patchOpaque16(buf);
     }
 
     public static byte[] createCertificateTypeExtensionClient(short[] certificateTypes) throws IOException
     {
-        if (certificateTypes == null || certificateTypes.length < 1 || certificateTypes.length > 255)
+        if (TlsUtils.isNullOrEmpty(certificateTypes) || certificateTypes.length > 255)
         {
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
@@ -607,9 +612,19 @@ public class TlsExtensionsUtils
         return createEmptyExtensionData();
     }
 
+    public static byte[] createCompressCertificateExtension(int[] algorithms) throws IOException
+    {
+        if (TlsUtils.isNullOrEmpty(algorithms) || algorithms.length > 127)
+        {
+            throw new TlsFatalAlert(AlertDescription.internal_error);
+        }
+
+        return TlsUtils.encodeUint16ArrayWithUint8Length(algorithms);
+    }
+
     public static byte[] createCookieExtension(byte[] cookie) throws IOException
     {
-        if (cookie == null || cookie.length < 1 || cookie.length >= (1 << 16))
+        if (TlsUtils.isNullOrEmpty(cookie) || cookie.length >= (1 << 16))
         {
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
@@ -677,11 +692,7 @@ public class TlsExtensionsUtils
             clientShare.encode(buf);
         }
 
-        int length = buf.size() - 2;
-        TlsUtils.checkUint16(length);
-        byte[] extensionData = buf.toByteArray();
-        TlsUtils.writeUint16(length, extensionData, 0);
-        return extensionData;
+        return patchOpaque16(buf);
     }
 
     public static byte[] createKeyShareHelloRetryRequest(int namedGroup)
@@ -738,11 +749,7 @@ public class TlsExtensionsUtils
             }
         }
 
-        int length = buf.size() - 2;
-        TlsUtils.checkUint16(length);
-        byte[] extensionData = buf.toByteArray();
-        TlsUtils.writeUint16(length, extensionData, 0);
-        return extensionData;
+        return patchOpaque16(buf);
     }
 
     public static byte[] createPaddingExtension(int dataLength)
@@ -778,7 +785,7 @@ public class TlsExtensionsUtils
 
     public static byte[] createPSKKeyExchangeModesExtension(short[] modes) throws IOException
     {
-        if (modes == null || modes.length < 1 || modes.length > 255)
+        if (TlsUtils.isNullOrEmpty(modes) || modes.length > 255)
         {
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
@@ -867,11 +874,7 @@ public class TlsExtensionsUtils
             entry.encode(buf);
         }
 
-        int length = buf.size() - 2;
-        TlsUtils.checkUint16(length);
-        byte[] extensionData = buf.toByteArray();
-        TlsUtils.writeUint16(length, extensionData, 0);
-        return extensionData;
+        return patchOpaque16(buf);
     }
 
     public static byte[] createSupportedGroupsExtension(Vector namedGroups) throws IOException
@@ -909,7 +912,7 @@ public class TlsExtensionsUtils
 
     public static byte[] createSupportedVersionsExtensionClient(ProtocolVersion[] versions) throws IOException
     {
-        if (versions == null || versions.length < 1 || versions.length > 127)
+        if (TlsUtils.isNullOrEmpty(versions) || versions.length > 127)
         {
             throw new TlsFatalAlert(AlertDescription.internal_error);
         }
@@ -951,11 +954,7 @@ public class TlsExtensionsUtils
             }
         }
 
-        int length = buf.size() - 2;
-        TlsUtils.checkUint16(length);
-        byte[] extensionData = buf.toByteArray();
-        TlsUtils.writeUint16(length, extensionData, 0);
-        return extensionData;
+        return patchOpaque16(buf);
     }
 
     public static byte[] createTrustedCAKeysExtensionServer()
@@ -1040,8 +1039,10 @@ public class TlsExtensionsUtils
         while (buf.available() > 0)
         {
             byte[] derEncoding = TlsUtils.readOpaque16(buf, 1);
-            ASN1Primitive asn1 = TlsUtils.readDERObject(derEncoding);
-            authorities.addElement(X500Name.getInstance(asn1));
+            ASN1Primitive asn1 = TlsUtils.readASN1Object(derEncoding);
+            X500Name ca = X500Name.getInstance(asn1);
+            TlsUtils.requireDEREncoding(ca, derEncoding);
+            authorities.addElement(ca);
         }
         return authorities;
     }
@@ -1064,6 +1065,16 @@ public class TlsExtensionsUtils
     public static boolean readClientCertificateURLExtension(byte[] extensionData) throws IOException
     {
         return readEmptyExtensionData(extensionData);
+    }
+
+    public static int[] readCompressCertificateExtension(byte[] extensionData) throws IOException
+    {
+        int[] algorithms = TlsUtils.decodeUint16ArrayWithUint8Length(extensionData);
+        if (algorithms.length < 1)
+        {
+            throw new TlsFatalAlert(AlertDescription.decode_error);
+        }
+        return algorithms;
     }
 
     public static byte[] readCookieExtension(byte[] extensionData) throws IOException
@@ -1193,8 +1204,9 @@ public class TlsExtensionsUtils
         while (buf.available() > 0)
         {
             byte[] derEncoding = TlsUtils.readOpaque8(buf, 1);
-            ASN1Primitive asn1 = TlsUtils.readDERObject(derEncoding);
+            ASN1Primitive asn1 = TlsUtils.readASN1Object(derEncoding);
             ASN1ObjectIdentifier certificateExtensionOID = ASN1ObjectIdentifier.getInstance(asn1);
+            TlsUtils.requireDEREncoding(certificateExtensionOID, derEncoding);
 
             if (filters.containsKey(certificateExtensionOID))
             {
@@ -1215,12 +1227,14 @@ public class TlsExtensionsUtils
         {
             throw new IllegalArgumentException("'extensionData' cannot be null");
         }
+        int diff = 0;
         for (int i = 0; i < extensionData.length; ++i)
         {
-            if (extensionData[i] != 0)
-            {
-                throw new TlsFatalAlert(AlertDescription.illegal_parameter);
-            }
+            diff |= extensionData[i];
+        }
+        if (diff != 0)
+        {
+            throw new TlsFatalAlert(AlertDescription.illegal_parameter);
         }
         return extensionData.length;
     }
@@ -1475,5 +1489,14 @@ public class TlsExtensionsUtils
     public static boolean readTrustedCAKeysExtensionServer(byte[] extensionData) throws IOException
     {
         return readEmptyExtensionData(extensionData);
+    }
+
+    private static byte[] patchOpaque16(ByteArrayOutputStream buf) throws IOException
+    {
+        int length = buf.size() - 2;
+        TlsUtils.checkUint16(length);
+        byte[] extensionData = buf.toByteArray();
+        TlsUtils.writeUint16(length, extensionData, 0);
+        return extensionData;
     }
 }

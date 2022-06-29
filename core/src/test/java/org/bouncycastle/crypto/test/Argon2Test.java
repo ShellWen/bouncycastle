@@ -36,12 +36,10 @@ public class Argon2Test
 
         int version = Argon2Parameters.ARGON2_VERSION_10;
 
-
-
         /* Multiple test cases for various input values */
         hashTest(version, 2, 16, 1, "password", "somesalt",
             "f6c4db4a54e2a370627aff3db6176b94a2a209a62c8e36152711802f7b30c694", DEFAULT_OUTPUTLEN);
-
+        
         hashTest(version, 2, 20, 1, "password", "somesalt",
             "9690ec55d28d3ed32562f2e73ea62b02b018757643a2ae6e79528459de8106e9",
             DEFAULT_OUTPUTLEN);

@@ -3,6 +3,8 @@ package org.bouncycastle.jsse.provider;
 import java.security.AlgorithmParameters;
 import java.security.Key;
 import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.bouncycastle.jsse.java.security.BCAlgorithmConstraints;
 import org.bouncycastle.jsse.java.security.BCCryptoPrimitive;
@@ -10,6 +12,8 @@ import org.bouncycastle.jsse.java.security.BCCryptoPrimitive;
 class ProvAlgorithmConstraints
     extends AbstractAlgorithmConstraints
 {
+    private static final Logger LOG = Logger.getLogger(ProvAlgorithmConstraints.class.getName());
+
     /*
      * NOTE: In case these security properties are absent, we supply defaults drawn from recent
      * JDKs. This is an incompatibility with SunJSSE (which treats these absent properties as simply
@@ -19,12 +23,9 @@ class ProvAlgorithmConstraints
     private static final String PROPERTY_TLS_DISABLED_ALGORITHMS = "jdk.tls.disabledAlgorithms";
 
     private static final String DEFAULT_CERTPATH_DISABLED_ALGORITHMS =
-        "MD2, MD5, SHA1 jdkCA & usage TLSServer, RSA keySize < 1024, DSA keySize < 1024, EC keySize < 224, " +
-        "include jdk.disabled.namedCurves";
+        "MD2, MD5, SHA1 jdkCA & usage TLSServer, RSA keySize < 1024, DSA keySize < 1024, EC keySize < 224";
     private static final String DEFAULT_TLS_DISABLED_ALGORITHMS =
-        "SSLv3, RC4, DES, MD5withRSA, DH keySize < 1024, EC keySize < 224, 3DES_EDE_CBC, anon, NULL, " +
-        "include jdk.disabled.namedCurves";
-
+        "SSLv3, TLSv1, TLSv1.1, RC4, DES, MD5withRSA, DH keySize < 1024, EC keySize < 224, 3DES_EDE_CBC, anon, NULL";
     private static final DisabledAlgorithmConstraints provTlsDisabledAlgorithms = DisabledAlgorithmConstraints.create(
         ProvAlgorithmDecomposer.INSTANCE_TLS, PROPERTY_TLS_DISABLED_ALGORITHMS, DEFAULT_TLS_DISABLED_ALGORITHMS);
     private static final DisabledAlgorithmConstraints provX509DisabledAlgorithms = DisabledAlgorithmConstraints.create(
@@ -69,6 +70,10 @@ class ProvAlgorithmConstraints
 
             if (!isSupportedSignatureAlgorithm(algorithmBC))
             {
+                if (LOG.isLoggable(Level.FINEST))
+                {
+                    LOG.finest("Signature algorithm '" + algorithmBC + "' not in supported signature algorithms");
+                }
                 return false;
             }
         }
@@ -129,6 +134,10 @@ class ProvAlgorithmConstraints
 
             if (!isSupportedSignatureAlgorithm(algorithmBC))
             {
+                if (LOG.isLoggable(Level.FINEST))
+                {
+                    LOG.finest("Signature algorithm '" + algorithmBC + "' not in supported signature algorithms");
+                }
                 return false;
             }
         }

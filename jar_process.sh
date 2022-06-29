@@ -5,10 +5,14 @@ sh add_module.sh prov
 
 sh add_module.sh prov-ext
 
+sh add_module.sh util
+
 sh add_module.sh tls
 
 sh add_module.sh pkix
 
 sh add_module.sh mail
+
+sh add_module.sh jmail
 
 sh add_module.sh pg
