@@ -37,7 +37,7 @@ public class RegularExpression
     public String getRegex()
     {
         // last byte is null terminator
-        return Strings.fromUTF8ByteArray(data, 0, data.length - 1);
+        return Strings.fromUTF8ByteArray(data);
     }
 
     public byte[] getRawRegex()

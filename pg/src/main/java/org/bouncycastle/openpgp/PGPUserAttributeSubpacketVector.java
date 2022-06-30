@@ -20,8 +20,8 @@ public class PGPUserAttributeSubpacketVector
 
     UserAttributeSubpacket[] packets;
 
-    PGPUserAttributeSubpacketVector(
-        UserAttributeSubpacket[]    packets)
+    public PGPUserAttributeSubpacketVector(
+            UserAttributeSubpacket[] packets)
     {
         this.packets = packets;
     }

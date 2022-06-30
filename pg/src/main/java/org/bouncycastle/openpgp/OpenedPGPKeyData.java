@@ -13,7 +13,7 @@ import org.bouncycastle.asn1.cryptlib.CryptlibObjectIdentifiers;
 import org.bouncycastle.asn1.edec.EdECObjectIdentifiers;
 import org.bouncycastle.asn1.teletrust.TeleTrusTNamedCurves;
 import org.bouncycastle.asn1.x9.ECNamedCurveTable;
-import org.bouncycastle.asn1.x9.X9ECParametersHolder;
+import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.bcpg.BCPGKey;
 import org.bouncycastle.bcpg.DSAPublicBCPGKey;
 import org.bouncycastle.bcpg.DSASecretBCPGKey;
@@ -910,10 +910,10 @@ public class OpenedPGPKeyData
         else
         {
             ASN1ObjectIdentifier oid = ECNamedCurveTable.getOID(curve);
-            X9ECParametersHolder holder = CustomNamedCurves.getByNameLazy(curve);
+            X9ECParameters holder = CustomNamedCurves.getByName(curve);
             if (holder == null)
             {
-                holder = TeleTrusTNamedCurves.getByOIDLazy(oid);
+                holder = TeleTrusTNamedCurves.getByOID(oid);
             }
 
             if (holder == null)
